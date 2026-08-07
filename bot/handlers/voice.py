@@ -8,12 +8,12 @@ import tempfile
 import uuid
 
 from aiogram import F, Router
-from aiogram.types import Message
+from aiogram.types import FSInputFile, Message
 
 from bot.config import Settings
 from core.practice import PracticeParseError, PracticeService
-from providers.audio import to_wav
-from providers.base import STTProvider
+from providers.audio import to_ogg_opus, to_wav
+from providers.base import STTProvider, TTSProvider
 from storage.repo import Repository
 
 from ..flow import get_or_create_user, run_practice
@@ -38,11 +38,48 @@ def _cleanup(*paths: str) -> None:
             logger.warning("Не удалось удалить временный файл: %s", path)
 
 
+async def _speak(
+    message: Message,
+    tts: TTSProvider,
+    text: str,
+    chat_id: int,
+    message_id: int,
+) -> None:
+    """Синтезирует текст в голосовое и отправляет его пользователю.
+
+    Ошибки не роняют основной поток — голосовое это бонус к текстовому ответу.
+    """
+    if not text:
+        return
+    try:
+        audio = await tts.synthesize(text)
+    except Exception:
+        logger.exception("Ошибка TTS")
+        return
+    if not audio:
+        return
+
+    unique = f"tts_{chat_id}_{message_id}_{uuid.uuid4().hex[:6]}"
+    base = os.path.join(tempfile.gettempdir(), unique)
+    mp3_path = f"{base}.mp3"
+    ogg_path = f"{base}.ogg"
+    try:
+        with open(mp3_path, "wb") as f:
+            f.write(audio)
+        await to_ogg_opus(mp3_path, ogg_path)
+        await message.answer_voice(voice=FSInputFile(ogg_path))
+    except Exception:
+        logger.exception("Не удалось отправить голосовое")
+    finally:
+        _cleanup(mp3_path, ogg_path)
+
+
 @router.message(F.voice)
 async def on_voice(
     message: Message,
     repo: Repository,
     stt: STTProvider,
+    tts: TTSProvider,
     practice: PracticeService,
     settings: Settings,
 ) -> None:
@@ -81,7 +118,7 @@ async def on_voice(
 
     prefix = f"🎤 Вы сказали: <i>{escape(text)}</i>"
     try:
-        reply = await run_practice(
+        turn = await run_practice(
             message,
             repo,
             practice,
@@ -101,4 +138,11 @@ async def on_voice(
         )
         return
 
-    await status.edit_text(reply)
+    await status.edit_text(turn.reply)
+    await _speak(
+        message,
+        tts,
+        turn.result.corrected_text,
+        message.chat.id,
+        message.message_id,
+    )

@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 
 from aiogram.types import Message
 
 from bot.config import Settings
+from core.models import PracticeResult
 from core.practice import PracticeService
 from storage.repo import Repository, UserRow
 
 from .formatters import format_practice_result
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PracticeTurn:
+    reply: str  # готовый HTML-ответ для пользователя
+    result: PracticeResult  # структурированный результат (нужен для TTS)
 
 
 def issues_to_json(result) -> str:
@@ -45,8 +53,8 @@ async def run_practice(
     text: str,
     *,
     prefix: str = "",
-) -> str:
-    """Проводит практику по переданному тексту, сохраняет в БД и возвращает HTML-ответ.
+) -> PracticeTurn:
+    """Проводит практику по переданному тексту, сохраняет в БД и возвращает ответ.
 
     Поднимает исключение при сбое LLM — хэндлер решает, что показать пользователю.
     """
@@ -68,4 +76,4 @@ async def run_practice(
     if prefix:
         reply = f"{prefix}\n\n{reply}"
     await repo.add_assistant_message(user.id, format_practice_result(result, html=False))
-    return reply
+    return PracticeTurn(reply=reply, result=result)

@@ -32,7 +32,7 @@ async def on_text(
         return
 
     try:
-        reply = await run_practice(message, repo, practice, settings, text)
+        turn = await run_practice(message, repo, practice, settings, text)
     except PracticeParseError as exc:
         logger.warning("Не удалось разобрать ответ LLM: %s", exc)
         await message.answer("🤔 Не смог разобрать ответ модели. Попробуй сформулировать ещё раз.")
@@ -45,4 +45,4 @@ async def on_text(
         )
         return
 
-    await message.answer(reply)
+    await message.answer(turn.reply)
