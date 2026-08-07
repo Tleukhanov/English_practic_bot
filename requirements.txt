@@ -1,0 +1,8 @@
+aiogram>=3.13,<4
+pydantic>=2.8
+pydantic-settings>=2.4
+openai>=1.50
+aiosqlite>=0.20
+faster-whisper>=1.0
+edge-tts>=6.1
+imageio-ffmpeg>=0.5
