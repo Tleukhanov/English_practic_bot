@@ -1,0 +1,50 @@
+"""Фабрики провайдеров. Выбор реализации — только через .env (см. bot/config.py)."""
+
+from bot.config import Settings
+
+from .base import LLMProvider, STTProvider, TTSProvider
+from .llm_openai import OpenAIChatProvider
+from .stt_faster_whisper import FasterWhisperProvider
+from .tts_edge import EdgeTTSProvider
+
+
+def create_llm(settings: Settings) -> LLMProvider:
+    if not settings.resolved_llm_base_url:
+        raise ValueError(
+            f"Неизвестный LLM_PROVIDER={settings.llm_provider!r}. "
+            f"Доступные: deepseek, openai, ollama, groq, mistral, gemini, openrouter "
+            f"(или укажи LLM_BASE_URL/LLM_MODEL вручную)."
+        )
+    api_key = settings.llm_api_key or "not-needed"
+    return OpenAIChatProvider(
+        base_url=settings.resolved_llm_base_url,
+        api_key=api_key,
+        model=settings.resolved_llm_model,
+        default_temperature=settings.llm_temperature,
+    )
+
+
+def create_stt(settings: Settings) -> STTProvider:
+    provider = settings.stt_provider.lower()
+    if provider == "faster-whisper":
+        return FasterWhisperProvider(model_name=settings.stt_model)
+    if provider == "openai":
+        if not settings.stt_api_key:
+            raise ValueError("STT_PROVIDER=openai, но STT_API_KEY не задан в .env")
+        from .stt_openai import OpenAIWhisperProvider
+
+        return OpenAIWhisperProvider(api_key=settings.stt_api_key)
+    raise ValueError(f"Неизвестный STT_PROVIDER={provider!r}. Доступные: faster-whisper, openai")
+
+
+def create_tts(settings: Settings) -> TTSProvider:
+    provider = settings.tts_provider.lower()
+    if provider == "edge-tts":
+        return EdgeTTSProvider(voice=settings.tts_voice)
+    if provider == "openai":
+        if not settings.llm_api_key:
+            raise ValueError("TTS_PROVIDER=openai, но LLM_API_KEY не задан в .env")
+        from .tts_openai import OpenAITTSProvider
+
+        return OpenAITTSProvider(api_key=settings.llm_api_key)
+    raise ValueError(f"Неизвестный TTS_PROVIDER={provider!r}. Доступные: edge-tts, openai")
