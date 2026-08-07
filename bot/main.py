@@ -19,7 +19,7 @@ from providers import create_llm, create_stt, create_tts
 from storage.sqlite import SQLiteRepository
 
 from .config import get_settings
-from .handlers import menu, start, text
+from .handlers import menu, start, text, voice
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,7 @@ async def main() -> None:
     dp.include_router(start.router)
     dp.include_router(menu.router)
     dp.include_router(text.router)
+    dp.include_router(voice.router)
 
     await bot.set_my_commands(COMMANDS)
 
