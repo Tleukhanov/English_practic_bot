@@ -1,0 +1,114 @@
+# English Practic Bot 🗣️
+
+Telegram-бот-репетитор английского: пользователь **пишет** или **говорит** по-английски, бот проверяет фразу, объясняет ошибки на русском и ведёт диалог. На голосовое отвечает голосом.
+
+Под капотом — дешёвая LLM (провайдер настраивается одной строкой в `.env`), локальный Whisper для распознавания речи и бесплатный TTS для озвучки.
+
+## Возможности
+
+- ✍️ **Текстовая практика** — бот проверяет фразу, показывает ошибки с объяснениями и исправленный вариант
+- 🎤 **Голосовая практика** — голосовое распознаётся (Whisper), проверяется, а исправленный вариант бот проговаривает голосом (edge-tts)
+- 💬 **Диалог** — бот запоминает последние реплики и задаёт следующий вопрос
+- 📊 **Статистика** — количество реплик, точность, частые типы ошибок
+- 🔌 **Расширяемость** — LLM/STT/TTS вынесены за абстракции; код бота не знает, какой провайдер используется
+
+## Стек
+
+| Компонент | Технология |
+|---|---|
+| Бот | `aiogram` 3.x |
+| БД | `aiosqlite` (SQLite) |
+| LLM | OpenAI-совместимый адаптер: DeepSeek / OpenAI / Ollama / Groq / Mistral / Gemini / OpenRouter |
+| STT | `faster-whisper` (локально) или OpenAI API |
+| TTS | `edge-tts` (бесплатно) или OpenAI API |
+| Аудио | `imageio-ffmpeg` — статический ffmpeg внутри пакета, ставить в систему не нужно |
+
+## Структура
+
+```
+├── bot/                  # Telegram-бот
+│   ├── main.py           # точка входа (python -m bot.main)
+│   ├── config.py         # настройки из .env + пресеты LLM-провайдеров
+│   ├── flow.py           # общая логика практики (текст и голос)
+│   ├── formatters.py     # форматирование ответов/статистики
+│   └── handlers/         # start, menu, text, voice
+├── core/                 # домен: модели и сервис практики (не зависит от Telegram)
+│   ├── models.py         # PracticeResult, Issue
+│   └── practice.py       # промпт, парсер JSON-ответа LLM, PracticeService
+├── providers/            # LLM / STT / TTS / аудио-утилиты
+├── storage/              # Repository + SQLite-реализация
+└── tests/                # pytest
+```
+
+## Быстрый старт (Windows / Linux / macOS)
+
+Требуется Python 3.10+.
+
+```bash
+# 1. Скопировать репозиторий и создать окружение
+git clone https://github.com/Tleukhanov/English_practic_bot.git
+cd English_practic_bot
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+# Linux/macOS
+# source .venv/bin/activate
+
+# 2. Зависимости
+pip install -r requirements.txt          # рантайм
+pip install -r requirements-dev.txt      # + тесты
+
+# 3. Настройки
+cp .env.example .env
+# заполни TELEGRAM_BOT_TOKEN и LLM_API_KEY (см. ниже)
+
+# 4. Запуск
+python -m bot.main
+```
+
+### Настройка `.env`
+
+```env
+TELEGRAM_BOT_TOKEN=123456:ABC...   # токен от @BotFather
+LLM_PROVIDER=deepseek              # выбери провайдера
+LLM_API_KEY=sk-...                 # ключ API (для ollama не нужен)
+```
+
+**Переключение LLM-провайдера — одна строка.** Все они говорят по одному OpenAI-совместимому протоколу:
+
+| `LLM_PROVIDER` | base_url (пресет) | Модель по умолчанию | Нужен ключ? |
+|---|---|---|---|
+| `deepseek` | `api.deepseek.com/v1` | `deepseek-chat` | да |
+| `openai` | `api.openai.com/v1` | `gpt-4o-mini` | да |
+| `ollama` | `localhost:11434/v1` | `gemma2:2b` | нет |
+| `groq` | `api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | да |
+| `mistral` | `api.mistral.ai/v1` | `mistral-small-latest` | да |
+| `gemini` | `generativelanguage.googleapis.com/...` | `gemini-2.0-flash` | да |
+| `openrouter` | `openrouter.ai/api/v1` | `deepseek/deepseek-chat` | да |
+
+Любой пресет можно перекрыть полями `LLM_BASE_URL` и `LLM_MODEL` — так подключается любой другой совместимый провайдер.
+
+STT: `STT_PROVIDER=faster-whisper` (локально, модель качается один раз при первом голосовом) или `openai` (`whisper-1`).
+TTS: `TTS_PROVIDER=edge-tts` (бесплатно) или `openai`.
+
+## Голос
+
+- Telegram присылает голосовые в формате `.ogg/opus`; ffmpeg (встроен через `imageio-ffmpeg`) конвертирует их в `wav 16кГц` для Whisper
+- `faster-whisper` работает на CPU (модель `small` — быстра и точна), модель скачивается один раз при первом использовании
+- Ответ бота: текст проверки + голосовое с исправленной фразой (mp3 от edge-tts → ogg/opus через ffmpeg, т.к. Telegram принимает голосовые только в этом формате)
+
+## Тесты
+
+```bash
+pytest
+```
+
+Покрыты: парсер JSON-ответа LLM, сервис практики (на мок-модели), SQLite-хранилище и статистика, форматтеры, конвертация аудио через ffmpeg.
+
+## Дорожная карта
+
+- [x] MVP: текстовая и голосовая практика с исправлением ошибок
+- [ ] Генератор презентаций на разные темы (расширение кругозора) — модуль в `core/`
+- [ ] Сайт / Telegram Mini App для просмотра презентаций (FastAPI отдаёт статику)
+- [ ] Миграция на Postgres (интерфейс `Repository` уже готов)
