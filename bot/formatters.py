@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.lessons import LESSON_STEPS, LessonContent
 from core.models import PracticeResult
 from storage.repo import Stats
 
@@ -16,7 +17,7 @@ CATEGORY_LABELS = {
 }
 
 
-def _bold(text: str, html: bool) -> str:
+def _bold(text: str, html: bool = True) -> str:
     return f"<b>{text}</b>" if html else f"**{text}**"
 
 
@@ -69,3 +70,96 @@ def format_stats(stats: Stats, html: bool = True) -> str:
             label = CATEGORY_LABELS.get(category, category)
             lines.append(f"  • {label} — {count}")
     return "\n".join(lines)
+
+
+# ---------- Уроки (Фаза 1) ----------
+
+def format_lesson_intro(content: LessonContent) -> str:
+    parts = [
+        _bold(f"📚 Урок: {escape(content.topic)}"),
+        "",
+        escape(content.intro),
+        "",
+        "План урока:",
+        "  1️⃣ Новые слова",
+        "  2️⃣ Ключевые идеи",
+        "  3️⃣ Грамматика",
+        "  4️⃣ Задания и практика",
+        "",
+        "Нажми «➡️ Дальше», когда будешь готов.",
+    ]
+    return "\n".join(parts)
+
+
+def format_lesson_vocabulary(content: LessonContent) -> str:
+    parts = [_bold("📖 Новые слова"), ""]
+    for index, word in enumerate(content.vocabulary, start=1):
+        line = f"{index}. {_bold(escape(word.word))} — {escape(word.translation)}"
+        if word.example:
+            line += f"\n   <i>{escape(word.example)}</i>"
+        parts.append(line)
+    return "\n".join(parts)
+
+
+def format_lesson_slides(content: LessonContent) -> str:
+    parts = [_bold("💡 Ключевые идеи темы"), ""]
+    for slide in content.slides:
+        parts.append(f"• {escape(slide)}")
+    return "\n".join(parts)
+
+
+def format_lesson_grammar(content: LessonContent) -> str:
+    grammar = content.grammar
+    parts = [_bold(f"📐 Грамматика: {escape(grammar.rule if grammar else '')}")]
+    if grammar and grammar.explanation_ru:
+        parts.append("")
+        parts.append(escape(grammar.explanation_ru))
+    if grammar and grammar.examples:
+        parts.append("")
+        parts.append("Примеры:")
+        for index, example in enumerate(grammar.examples, start=1):
+            parts.append(f"{index}. <i>{escape(example)}</i>")
+    return "\n".join(parts)
+
+
+def format_lesson_task(content: LessonContent, task_index: int) -> str:
+    total = len(content.tasks)
+    task = content.tasks[task_index] if 0 <= task_index < total else ""
+    return "\n".join(
+        [
+            _bold(f"❓ Задание {task_index + 1} из {total}"),
+            "",
+            escape(task),
+            "",
+            "Ответь на английском (текстом или голосом) — я проверю и исправлю.",
+        ]
+    )
+
+
+def format_lesson_recap(content: LessonContent) -> str:
+    parts = [_bold("🎉 Урок почти завершён!"), ""]
+    parts.append(f"Тема: {escape(content.topic)}")
+    if content.vocabulary:
+        words = ", ".join(f"<b>{escape(w.word)}</b>" for w in content.vocabulary)
+        parts.append(f"📖 Слова: {words}")
+    if content.grammar and content.grammar.rule:
+        parts.append(f"📐 Грамматика: {escape(content.grammar.rule)}")
+    parts.append("")
+    parts.append("Совет: повтори слова и построй 2–3 предложения на эту тему в течение дня.")
+    parts.append("")
+    parts.append("Нажми «🎓 Завершить урок» — увидишь статистику и новую тему.")
+    return "\n".join(parts)
+
+
+def format_lesson_step(step_name: str, content: LessonContent, task_index: int = 0) -> str:
+    renderers = {
+        "intro": format_lesson_intro,
+        "vocabulary": format_lesson_vocabulary,
+        "slides": format_lesson_slides,
+        "grammar": format_lesson_grammar,
+        "tasks": lambda c: format_lesson_task(c, task_index),
+        "recap": format_lesson_recap,
+    }
+    if step_name not in LESSON_STEPS:
+        raise ValueError(f"Неизвестный шаг урока: {step_name!r}")
+    return renderers[step_name](content)
