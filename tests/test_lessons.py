@@ -1,5 +1,6 @@
 import pytest
 
+from bot.lessons import LESSON_STEPS, next_lesson_position
 from core.lessons import (
     LessonParseError,
     LessonService,
@@ -100,3 +101,21 @@ async def test_lesson_service_generates_and_parses():
 def test_practice_parse_error_alias_compat():
     with pytest.raises(PracticeParseError):
         parse_practice_response("garbage")
+
+
+def test_next_position_advances_steps():
+    assert LESSON_STEPS[0] == "intro"
+    assert next_lesson_position(0, 0, 0) == (1, 0, False)
+    assert next_lesson_position(1, 0, 0) == (2, 0, False)
+    assert next_lesson_position(2, 0, 0) == (3, 0, False)
+
+
+def test_next_position_tasks_sequence():
+    assert LESSON_STEPS[4] == "tasks"
+    assert next_lesson_position(4, 0, 2) == (4, 1, False)
+    assert next_lesson_position(4, 1, 2) == (5, 0, False)
+
+
+def test_next_position_last_step_finishes():
+    assert LESSON_STEPS[5] == "recap"
+    assert next_lesson_position(5, 0, 0) == (6, 0, True)

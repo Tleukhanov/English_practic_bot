@@ -1,4 +1,7 @@
-"""Голосовая практика: голосовое -> Whisper -> проверка -> ответ текстом (и голосом в след. шаге)."""
+"""Голосовая практика: голосовое -> Whisper -> проверка -> ответ текстом + озвучка.
+
+Если у пользователя идёт структурированный урок — ответ получает клавиатуру урока.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +20,7 @@ from providers.base import STTProvider, TTSProvider
 from storage.repo import Repository
 
 from ..flow import get_or_create_user, run_practice
+from ..keyboards import lesson_keyboard
 from ..utils import escape
 
 router = Router()
@@ -91,11 +95,13 @@ async def on_voice(
         )
         return
 
-    await repo.get_or_create_user(
+    user = await repo.get_or_create_user(
         message.from_user.id,
         username=message.from_user.username,
         first_name=message.from_user.first_name,
     )
+    session = await repo.get_active_lesson(user.id)
+    reply_markup = lesson_keyboard() if session is not None else None
 
     status = await message.answer("🎧 Слушаю...")
     ogg_path, wav_path = _temp_paths(message.chat.id, message.message_id)
@@ -138,7 +144,7 @@ async def on_voice(
         )
         return
 
-    await status.edit_text(turn.reply)
+    await status.edit_text(turn.reply, reply_markup=reply_markup)
     await _speak(
         message,
         tts,

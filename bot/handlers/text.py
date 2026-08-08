@@ -1,4 +1,7 @@
-"""Текстовая практика: пользователь пишет по-английски, бот проверяет."""
+"""Текстовая практика: пользователь пишет по-английски, бот проверяет.
+
+Если у пользователя идёт структурированный урок — сообщение уходит в урок.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +11,11 @@ from aiogram import F, Router
 from aiogram.types import Message
 
 from bot.config import Settings
-from core.practice import PracticeParseError, PracticeService
+from core.practice import PracticeService
 from storage.repo import Repository
 
-from ..flow import run_practice
+from ..flow import answer_practice, get_or_create_user
+from ..keyboards import lesson_keyboard
 from ..utils import is_mostly_cyrillic
 
 router = Router()
@@ -31,18 +35,10 @@ async def on_text(
         await message.answer("😉 Пиши, пожалуйста, по-английски! Я репетитор английского и отвечаю на английском.")
         return
 
-    try:
-        turn = await run_practice(message, repo, practice, settings, text)
-    except PracticeParseError as exc:
-        logger.warning("Не удалось разобрать ответ LLM: %s", exc)
-        await message.answer("🤔 Не смог разобрать ответ модели. Попробуй сформулировать ещё раз.")
-        return
-    except Exception as exc:
-        logger.exception("Ошибка при обращении к LLM: %s", exc)
-        await message.answer(
-            "⚠️ Что-то пошло не так при обращении к модели. "
-            "Проверь LLM_API_KEY и LLM_PROVIDER в .env и попробуй ещё раз."
-        )
+    user = await get_or_create_user(message, repo)
+    session = await repo.get_active_lesson(user.id)
+    if session is not None:
+        await answer_practice(message, repo, practice, settings, text, reply_markup=lesson_keyboard())
         return
 
-    await message.answer(turn.reply)
+    await answer_practice(message, repo, practice, settings, text)

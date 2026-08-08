@@ -10,7 +10,7 @@ from aiogram.types import Message
 
 from bot.config import Settings
 from core.models import PracticeResult
-from core.practice import PracticeService
+from core.practice import PracticeParseError, PracticeService
 from storage.repo import Repository, UserRow
 
 from .formatters import format_practice_result
@@ -77,3 +77,33 @@ async def run_practice(
         reply = f"{prefix}\n\n{reply}"
     await repo.add_assistant_message(user.id, format_practice_result(result, html=False))
     return PracticeTurn(reply=reply, result=result)
+
+
+async def answer_practice(
+    message: Message,
+    repo: Repository,
+    practice: PracticeService,
+    settings: Settings,
+    text: str,
+    *,
+    prefix: str = "",
+    reply_markup=None,
+) -> None:
+    """Запускает практику и сама отвечает пользователю, обрабатывая ошибки LLM.
+
+    Удобный путь для хэндлеров, которым не нужен PracticeTurn (например, текст).
+    """
+    try:
+        turn = await run_practice(message, repo, practice, settings, text, prefix=prefix)
+    except PracticeParseError as exc:
+        logger.warning("Не удалось разобрать ответ LLM: %s", exc)
+        await message.answer("🤔 Не смог разобрать ответ модели. Попробуй сформулировать ещё раз.")
+        return
+    except Exception as exc:
+        logger.exception("Ошибка при обращении к LLM: %s", exc)
+        await message.answer(
+            "⚠️ Что-то пошло не так при обращении к модели. "
+            "Проверь LLM_API_KEY и LLM_PROVIDER в .env и попробуй ещё раз."
+        )
+        return
+    await message.answer(turn.reply, reply_markup=reply_markup)

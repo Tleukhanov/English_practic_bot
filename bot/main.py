@@ -14,17 +14,20 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
+from core.lessons import LessonService
 from core.practice import PracticeService
 from providers import create_llm, create_stt, create_tts
 from storage.sqlite import SQLiteRepository
 
 from .config import get_settings
 from .handlers import menu, start, text, voice
+from .lessons import router as lessons_router
 
 logger = logging.getLogger(__name__)
 
 COMMANDS = [
     BotCommand(command="start", description="Начать практику"),
+    BotCommand(command="lesson", description="Структурированный урок"),
     BotCommand(command="stats", description="Моя статистика"),
     BotCommand(command="help", description="Помощь"),
 ]
@@ -54,6 +57,7 @@ async def main() -> None:
     stt = create_stt(settings)
     tts = create_tts(settings)
     practice = PracticeService(llm, max_history=settings.max_context_messages)
+    lessons = LessonService(llm)
 
     bot = Bot(
         settings.telegram_bot_token,
@@ -63,12 +67,14 @@ async def main() -> None:
 
     dp["repo"] = repo
     dp["practice"] = practice
+    dp["lesson_service"] = lessons
     dp["stt"] = stt
     dp["tts"] = tts
     dp["settings"] = settings
 
     dp.include_router(start.router)
     dp.include_router(menu.router)
+    dp.include_router(lessons_router)
     dp.include_router(text.router)
     dp.include_router(voice.router)
 
