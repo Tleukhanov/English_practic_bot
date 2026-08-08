@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
-from .repo import Repository, Stats, UserRow
+from .repo import LessonSession, Repository, Stats, UserRow
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -36,6 +36,20 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id, id);
+
+CREATE TABLE IF NOT EXISTS lesson_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    topic TEXT NOT NULL,
+    step INTEGER NOT NULL DEFAULT 0,
+    task_index INTEGER NOT NULL DEFAULT 0,
+    content_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lesson_user ON lesson_sessions(user_id, status);
 """
 
 
@@ -159,3 +173,84 @@ class SQLiteRepository(Repository):
             errors=totals["errors"] if totals else 0,
             top_categories=top,
         )
+
+    # ---------- уроки ----------
+
+    @staticmethod
+    def _row_to_lesson(row) -> LessonSession:
+        return LessonSession(
+            id=row["id"],
+            user_id=row["user_id"],
+            topic=row["topic"],
+            step=row["step"],
+            task_index=row["task_index"],
+            content_json=row["content_json"],
+            status=row["status"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    async def start_lesson(self, user_id: int, topic: str, content_json: str) -> LessonSession:
+        conn = self._require_conn()
+        now = _now()
+        cursor = await conn.execute(
+            "INSERT INTO lesson_sessions (user_id, topic, content_json, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, 'active', ?, ?)",
+            (user_id, topic, content_json, now, now),
+        )
+        await conn.commit()
+        session_id = cursor.lastrowid
+        return LessonSession(
+            id=session_id,
+            user_id=user_id,
+            topic=topic,
+            step=0,
+            task_index=0,
+            content_json=content_json,
+            status="active",
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def get_active_lesson(self, user_id: int) -> LessonSession | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM lesson_sessions WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return self._row_to_lesson(row) if row else None
+
+    async def update_lesson(self, session_id: int, *, step: int | None = None, task_index: int | None = None) -> None:
+        conn = self._require_conn()
+        updates: list[str] = []
+        params: list[object] = []
+        if step is not None:
+            updates.append("step = ?")
+            params.append(step)
+        if task_index is not None:
+            updates.append("task_index = ?")
+            params.append(task_index)
+        if not updates:
+            return
+        updates.append("updated_at = ?")
+        params.append(_now())
+        params.append(session_id)
+        await conn.execute(f"UPDATE lesson_sessions SET {', '.join(updates)} WHERE id = ?", params)
+        await conn.commit()
+
+    async def finish_lesson(self, session_id: int) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE lesson_sessions SET status = 'finished', updated_at = ? WHERE id = ?",
+            (_now(), session_id),
+        )
+        await conn.commit()
+
+    async def abort_active_lessons(self, user_id: int) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE lesson_sessions SET status = 'aborted', updated_at = ? WHERE user_id = ? AND status = 'active'",
+            (_now(), user_id),
+        )
+        await conn.commit()

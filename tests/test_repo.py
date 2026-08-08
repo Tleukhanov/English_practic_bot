@@ -73,3 +73,40 @@ async def test_stats_empty(repo):
     assert stats.correct == 0
     assert stats.errors == 0
     assert stats.top_categories == []
+
+
+async def test_lesson_lifecycle(repo):
+    user = await repo.get_or_create_user(600)
+    session = await repo.start_lesson(user.id, "Travelling", '{"topic": "Travelling"}')
+    assert session.id > 0
+    assert session.step == 0
+    assert session.status == "active"
+
+    active = await repo.get_active_lesson(user.id)
+    assert active is not None
+    assert active.topic == "Travelling"
+    assert active.content_json == '{"topic": "Travelling"}'
+
+    await repo.update_lesson(session.id, step=2, task_index=1)
+    active = await repo.get_active_lesson(user.id)
+    assert active.step == 2
+    assert active.task_index == 1
+
+    await repo.finish_lesson(session.id)
+    assert await repo.get_active_lesson(user.id) is None
+
+
+async def test_abort_active_lessons(repo):
+    user = await repo.get_or_create_user(700)
+    await repo.start_lesson(user.id, "Chess", "{}")
+    await repo.start_lesson(user.id, "Chess 2", "{}")
+    await repo.abort_active_lessons(user.id)
+    assert await repo.get_active_lesson(user.id) is None
+
+
+async def test_active_lessons_are_per_user(repo):
+    alice = await repo.get_or_create_user(801)
+    bob = await repo.get_or_create_user(802)
+    await repo.start_lesson(alice.id, "AI", "{}")
+    assert await repo.get_active_lesson(bob.id) is None
+    assert await repo.get_active_lesson(alice.id) is not None

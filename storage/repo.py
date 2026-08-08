@@ -22,6 +22,19 @@ class Stats:
     top_categories: list[tuple[str, int]] = field(default_factory=list)
 
 
+@dataclass
+class LessonSession:
+    id: int
+    user_id: int
+    topic: str
+    step: int  # индекс шага в core.lessons.LESSON_STEPS
+    task_index: int  # индекс текущего задания внутри шага "tasks"
+    content_json: str
+    status: str  # active | finished | aborted
+    created_at: str
+    updated_at: str
+
+
 class Repository(ABC):
     @abstractmethod
     async def connect(self) -> None: ...
@@ -51,3 +64,18 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_stats(self, user_id: int) -> Stats: ...
+
+    @abstractmethod
+    async def start_lesson(self, user_id: int, topic: str, content_json: str) -> LessonSession: ...
+
+    @abstractmethod
+    async def get_active_lesson(self, user_id: int) -> LessonSession | None: ...
+
+    @abstractmethod
+    async def update_lesson(self, session_id: int, *, step: int | None = None, task_index: int | None = None) -> None: ...
+
+    @abstractmethod
+    async def finish_lesson(self, session_id: int) -> None: ...
+
+    @abstractmethod
+    async def abort_active_lessons(self, user_id: int) -> None: ...
