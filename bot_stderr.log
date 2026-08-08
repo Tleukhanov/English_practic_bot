@@ -1,0 +1,31 @@
+2026-08-08 21:54:18,901 | INFO | aiogram.dispatcher | Start polling
+2026-08-08 21:54:19,206 | INFO | aiogram.dispatcher | Run polling for bot @data_english_hub_bot id=8908934883 - 'english_practic'
+2026-08-08 21:55:03,671 | INFO | aiogram.event | Update id=30052226 is handled. Duration 819 ms by bot id=8908934883
+2026-08-08 21:55:29,106 | INFO | httpx | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-08 21:55:35,314 | INFO | aiogram.event | Update id=30052227 is handled. Duration 10883 ms by bot id=8908934883
+2026-08-08 21:57:09,829 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/agent-harnesses "HTTP/1.1 200 OK"
+2026-08-08 21:57:10,208 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-small/revision/main "HTTP/1.1 200 OK"
+2026-08-08 21:57:10,545 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-small/tree/536b0662742c02347bc0e980a01041f333bce120?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-08-08 21:57:11,169 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/Systran/faster-whisper-small/resolve/536b0662742c02347bc0e980a01041f333bce120/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-08-08 21:57:11,359 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Systran/faster-whisper-small/536b0662742c02347bc0e980a01041f333bce120/config.json "HTTP/1.1 200 OK"
+2026-08-08 21:57:11,476 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/Systran/faster-whisper-small/resolve/536b0662742c02347bc0e980a01041f333bce120/vocabulary.txt "HTTP/1.1 307 Temporary Redirect"
+2026-08-08 21:57:11,495 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/Systran/faster-whisper-small/resolve/536b0662742c02347bc0e980a01041f333bce120/tokenizer.json "HTTP/1.1 307 Temporary Redirect"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-08 21:57:11,512 | WARNING | huggingface_hub.utils._http | Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-08 21:57:11,552 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Systran/faster-whisper-small/536b0662742c02347bc0e980a01041f333bce120/config.json "HTTP/1.1 200 OK"
+C:\Users\huawei\Desktop\startup_english\.venv\Lib\site-packages\huggingface_hub\file_download.py:141: UserWarning: `huggingface_hub` cache-system uses symlinks by default to efficiently store duplicated files but your machine does not support them in C:\Users\huawei\.cache\huggingface\hub\models--Systran--faster-whisper-small. Caching files will still work but in a degraded version that might require more space on your disk. This warning can be disabled by setting the `HF_HUB_DISABLE_SYMLINKS_WARNING` environment variable. For more details, see https://huggingface.co/docs/huggingface_hub/how-to-cache#limitations.
+To support symlinks on Windows, you either need to activate Developer Mode or to run Python as an administrator. In order to activate developer mode, see this article: https://docs.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development
+  warnings.warn(message)
+2026-08-08 21:57:11,692 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Systran/faster-whisper-small/536b0662742c02347bc0e980a01041f333bce120/vocabulary.txt "HTTP/1.1 200 OK"
+2026-08-08 21:57:11,697 | INFO | httpx | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/Systran/faster-whisper-small/536b0662742c02347bc0e980a01041f333bce120/tokenizer.json "HTTP/1.1 200 OK"
+2026-08-08 21:57:11,940 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Systran/faster-whisper-small/536b0662742c02347bc0e980a01041f333bce120/vocabulary.txt "HTTP/1.1 200 OK"
+2026-08-08 21:57:11,964 | INFO | httpx | HTTP Request: GET https://huggingface.co/api/resolve-cache/models/Systran/faster-whisper-small/536b0662742c02347bc0e980a01041f333bce120/tokenizer.json "HTTP/1.1 200 OK"
+2026-08-08 22:04:11,592 | ERROR | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - Request timeout error
+2026-08-08 22:04:11,595 | WARNING | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8908934883)
+2026-08-08 22:04:25,704 | INFO | aiogram.dispatcher | Connection established (tryings = 1, bot id = 8908934883)
+2026-08-08 22:07:17,581 | INFO | faster_whisper | Processing audio with duration 00:27.814
+2026-08-08 22:07:18,359 | INFO | faster_whisper | VAD filter removed 00:00.000 of audio
+2026-08-08 22:07:29,931 | INFO | httpx | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+2026-08-08 22:07:29,936 | INFO | openai._base_client | Retrying request to /chat/completions in 0.433996 seconds
+2026-08-08 22:07:31,833 | INFO | httpx | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-08 22:07:49,640 | INFO | aiogram.event | Update id=30052228 is handled. Duration 645466 ms by bot id=8908934883
