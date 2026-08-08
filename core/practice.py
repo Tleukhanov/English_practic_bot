@@ -6,12 +6,13 @@
 
 from __future__ import annotations
 
-import json
-import re
-
 from providers.base import LLMProvider
 
+from .json_utils import extract_json, JsonParseError
 from .models import Issue, PracticeResult
+
+# Обратная совместимость: код и тесты могут ссылаться на PracticeParseError.
+PracticeParseError = JsonParseError
 
 SYSTEM_PROMPT = """You are a friendly English tutor for a Russian-speaking student who wants to practice speaking English.
 
@@ -46,10 +47,6 @@ Rules:
 """
 
 
-class PracticeParseError(ValueError):
-    """Ответ LLM не удалось разобрать как JSON."""
-
-
 def build_prompt(text: str, history: list[dict[str, str]], max_history: int = 6) -> list[dict[str, str]]:
     """Собирает сообщения для LLM: системный промпт + недавняя история + текущая реплика."""
     messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -60,25 +57,9 @@ def build_prompt(text: str, history: list[dict[str, str]], max_history: int = 6)
     return messages
 
 
-def _extract_json(text: str) -> dict:
-    """Достаёт JSON-объект из ответа LLM, переживая ```json-обёртки и лишний текст."""
-    cleaned = text.strip()
-    fence = re.search(r"```(?:json)?\s*(.*?)```", cleaned, re.DOTALL)
-    if fence:
-        cleaned = fence.group(1).strip()
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise PracticeParseError(f"В ответе LLM нет JSON-объекта: {text[:200]!r}")
-    try:
-        return json.loads(cleaned[start : end + 1])
-    except json.JSONDecodeError as exc:
-        raise PracticeParseError(f"Невалидный JSON от LLM: {exc}") from exc
-
-
 def parse_practice_response(raw: str) -> PracticeResult:
     """Разбирает ответ LLM в PracticeResult. Все поля — с безопасными дефолтами."""
-    payload = _extract_json(raw)
+    payload = extract_json(raw)
 
     issues_raw = payload.get("issues") or []
     issues: list[Issue] = []
