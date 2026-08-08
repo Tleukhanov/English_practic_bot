@@ -19,6 +19,7 @@ htmlcov/
 data/
 *.db
 *.sqlite3
+*.log
 
 # IDE / OS
 .idea/
