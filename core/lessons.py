@@ -43,7 +43,9 @@ class LessonContent:
     tasks: list[str] = field(default_factory=list)
 
 
-SYSTEM_PROMPT = """You are an English teacher creating a structured mini-lesson for a Russian-speaking learner at an intermediate (B1) level.
+SYSTEM_PROMPT_TEMPLATE = """You are an English teacher creating a structured mini-lesson for a Russian-speaking learner at the __LEVEL_DESC__ level.
+
+__LEVEL_RULES__
 
 Create ONE complete, engaging mini-lesson on the requested topic (if no topic given, pick an interesting everyday topic yourself).
 
@@ -68,17 +70,43 @@ JSON schema:
 Rules:
 - vocabulary: 6 to 8 words with Russian translations and short examples.
 - slides: 3 to 5 concise bullet points that summarize the most useful ideas/words about the topic.
-- grammar: pick ONE simple grammar point naturally connected to the topic.
+- grammar: pick ONE simple grammar point naturally connected to the topic and suited to the student's level.
 - tasks: 3 to 5 short speaking tasks or questions the student should answer in English.
 - intro, slides, examples, tasks, words and their examples must be in ENGLISH.
 - translations and explanation_ru must be in RUSSIAN.
 """
 
+LEVEL_DESCRIPTIONS = {
+    None: "intermediate (B1)",
+    "A1": "beginner (A1)",
+    "A2": "elementary (A2)",
+    "B1": "intermediate (B1)",
+    "B2": "upper-intermediate (B2)",
+    "C1": "advanced (C1)",
+}
 
-def build_lesson_prompt(topic: str | None) -> list[dict[str, str]]:
+LEVEL_RULES = {
+    None: "",
+    "A1": "Keep everything simple: basic vocabulary, short sentences, tasks that require only simple answers.",
+    "A2": "Use everyday vocabulary and simple sentences; allow tasks with short answers about daily life.",
+    "B1": "Use intermediate vocabulary and a few complex sentences; tasks may ask for opinions.",
+    "B2": "Use richer vocabulary and complex sentences; tasks may ask for pros/cons and abstract topics.",
+    "C1": "Use advanced vocabulary and nuanced structures; tasks may ask to argue and explain abstract ideas.",
+}
+
+
+def _render_system_prompt(level: str | None) -> str:
+    return SYSTEM_PROMPT_TEMPLATE.replace(
+        "__LEVEL_DESC__", LEVEL_DESCRIPTIONS.get(level, LEVEL_DESCRIPTIONS[None])
+    ).replace(
+        "__LEVEL_RULES__", LEVEL_RULES.get(level, "")
+    )
+
+
+def build_lesson_prompt(topic: str | None, level: str | None = None) -> list[dict[str, str]]:
     user_message = f"Create a structured lesson. Topic: {topic}" if topic else "Create a structured lesson on an interesting topic of your choice."
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": _render_system_prompt(level)},
         {"role": "user", "content": user_message},
     ]
 
@@ -147,7 +175,7 @@ class LessonService:
     def __init__(self, llm: LLMProvider):
         self._llm = llm
 
-    async def generate(self, topic: str | None = None) -> LessonContent:
-        messages = build_lesson_prompt(topic)
+    async def generate(self, topic: str | None = None, level: str | None = None) -> LessonContent:
+        messages = build_lesson_prompt(topic, level=level)
         raw = await self._llm.chat(messages, temperature=0.7)
         return parse_lesson_response(raw)

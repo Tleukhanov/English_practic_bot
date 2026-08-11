@@ -72,6 +72,28 @@ def test_build_prompt_without_topic():
     assert "choice" in messages[1]["content"]
 
 
+def test_build_prompt_defaults_to_b1_level():
+    messages = build_lesson_prompt("Chess")
+    assert "intermediate (B1)" in messages[0]["content"]
+
+
+def test_build_prompt_with_level_a1():
+    messages = build_lesson_prompt("Chess", level="A1")
+    assert "beginner (A1)" in messages[0]["content"]
+    assert "simple answers" in messages[0]["content"]
+
+
+def test_build_prompt_with_level_c1():
+    messages = build_lesson_prompt("Chess", level="C1")
+    assert "advanced (C1)" in messages[0]["content"]
+    assert "argue and explain" in messages[0]["content"]
+
+
+def test_build_prompt_with_unknown_level_falls_back_to_b1():
+    messages = build_lesson_prompt("Chess", level="X9")
+    assert "intermediate (B1)" in messages[0]["content"]
+
+
 def test_lesson_content_json_roundtrip():
     content = parse_lesson_response(VALID_LESSON_JSON)
     restored = lesson_content_from_json(lesson_content_to_json(content))
