@@ -9,6 +9,7 @@ def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📚 Начать урок", callback_data="lesson_start")],
+            [InlineKeyboardButton(text="🎯 Определить уровень", callback_data="diagnostic_start")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
             [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
         ]
@@ -24,5 +25,17 @@ def lesson_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🔁 Повторить", callback_data="lesson:repeat"),
                 InlineKeyboardButton(text="⏹️ Завершить", callback_data="lesson:end"),
             ],
+        ]
+    )
+
+
+def diagnostic_keyboard() -> InlineKeyboardMarkup:
+    """Кнопки диагностики: пропустить задание или завершить досрочно."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⏭️ Пропустить", callback_data="diagnostic:skip"),
+                InlineKeyboardButton(text="⏹️ Завершить досрочно", callback_data="diagnostic:end"),
+            ]
         ]
     )

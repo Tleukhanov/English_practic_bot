@@ -1,6 +1,7 @@
 """Текстовая практика: пользователь пишет по-английски, бот проверяет.
 
-Если у пользователя идёт структурированный урок — сообщение уходит в урок.
+Если у пользователя идёт диагностика уровня — сообщение уходит в диагностику.
+Если идёт структурированный урок — сообщение уходит в урок.
 """
 
 from __future__ import annotations
@@ -11,9 +12,11 @@ from aiogram import F, Router
 from aiogram.types import Message
 
 from bot.config import Settings
+from core.diagnostic import DiagnosticService
 from core.practice import PracticeService
 from storage.repo import Repository
 
+from ..diagnostic import process_diagnostic_answer
 from ..flow import answer_practice, get_or_create_user
 from ..keyboards import lesson_keyboard
 from ..utils import is_mostly_cyrillic
@@ -27,6 +30,7 @@ async def on_text(
     message: Message,
     repo: Repository,
     practice: PracticeService,
+    diagnostic_service: DiagnosticService,
     settings: Settings,
 ) -> None:
     text = message.text.strip()
@@ -36,6 +40,9 @@ async def on_text(
         return
 
     user = await get_or_create_user(message, repo)
+    if await process_diagnostic_answer(message, repo, diagnostic_service, text):
+        return
+
     session = await repo.get_active_lesson(user.id)
     if session is not None:
         await answer_practice(message, repo, practice, settings, text, reply_markup=lesson_keyboard())

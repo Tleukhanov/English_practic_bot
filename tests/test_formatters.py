@@ -1,11 +1,15 @@
+from core.diagnostic import DiagnosticAssessment, DiagnosticTask
 from core.lessons import LessonContent, VocabWord, GrammarBlock
 from core.models import Issue, PracticeResult
 from storage.repo import Stats
 
 from bot.formatters import (
+    CEFR_LABELS_RU,
+    format_diagnostic_question,
     format_lesson_recap,
     format_lesson_step,
     format_lesson_task,
+    format_level_result,
     format_practice_result,
     format_stats,
 )
@@ -118,3 +122,51 @@ def test_format_lesson_step_unknown_raises():
 
     with pytest.raises(ValueError):
         format_lesson_step("nope", _sample_lesson())
+
+
+# ---------- Диагностика уровня (Фаза 3) ----------
+
+def test_format_diagnostic_question():
+    task = DiagnosticTask(text="Introduce yourself and tell about your hobby.", level_hint="A1")
+    text = format_diagnostic_question(task, 1, 6)
+    assert "задание 1 из 6" in text
+    assert "Introduce yourself" in text
+    assert "Ответь по-английски" in text
+
+
+def test_format_diagnostic_question_escapes_html():
+    task = DiagnosticTask(text="Agree or disagree: <money> buys happiness.")
+    text = format_diagnostic_question(task, 3, 6)
+    assert "&lt;money&gt;" in text
+
+
+def test_format_level_result():
+    assessment = DiagnosticAssessment(
+        level="B1",
+        confidence=0.8,
+        explanation_ru="уверенно строит сложные предложения, но путает времена",
+        strengths=["good fluency"],
+        weaknesses=["present perfect", "articles"],
+        recommendation="повтори Present Perfect",
+    )
+    text = format_level_result(assessment)
+    assert "B1" in text
+    assert CEFR_LABELS_RU["B1"] in text
+    assert "present perfect" in text
+    assert "articles" in text
+    assert "повтори Present Perfect" in text
+    assert "⚠️" not in text
+
+
+def test_format_level_result_estimated_note():
+    assessment = DiagnosticAssessment(level="A2")
+    text = format_level_result(assessment, estimated=True)
+    assert "A2" in text
+    assert "приблизительно" in text
+
+
+def test_format_level_result_empty_assessment():
+    assessment = DiagnosticAssessment(level="C1")
+    text = format_level_result(assessment)
+    assert "C1" in text
+    assert CEFR_LABELS_RU["C1"] in text

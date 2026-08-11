@@ -1,6 +1,7 @@
 """Голосовая практика: голосовое -> Whisper -> проверка -> ответ текстом + озвучка.
 
-Если у пользователя идёт структурированный урок — ответ получает клавиатуру урока.
+Если у пользователя идёт диагностика уровня — сообщение уходит в диагностику.
+Если идёт структурированный урок — ответ получает клавиатуру урока.
 """
 
 from __future__ import annotations
@@ -14,11 +15,13 @@ from aiogram import F, Router
 from aiogram.types import FSInputFile, Message
 
 from bot.config import Settings
+from core.diagnostic import DiagnosticService
 from core.practice import PracticeParseError, PracticeService
 from providers.audio import to_ogg_opus, to_wav
 from providers.base import STTProvider, TTSProvider
 from storage.repo import Repository
 
+from ..diagnostic import process_diagnostic_answer
 from ..flow import get_or_create_user, run_practice
 from ..keyboards import lesson_keyboard
 from ..utils import escape
@@ -85,6 +88,7 @@ async def on_voice(
     stt: STTProvider,
     tts: TTSProvider,
     practice: PracticeService,
+    diagnostic_service: DiagnosticService,
     settings: Settings,
 ) -> None:
     voice = message.voice
@@ -120,6 +124,9 @@ async def on_voice(
 
     if not text:
         await status.edit_text("🤷 Не расслышал слов. Попробуй говорить чётче и ближе к микрофону.")
+        return
+
+    if await process_diagnostic_answer(message, repo, diagnostic_service, text):
         return
 
     prefix = f"🎤 Вы сказали: <i>{escape(text)}</i>"

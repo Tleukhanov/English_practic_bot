@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.diagnostic import DiagnosticAssessment, DiagnosticTask
 from core.lessons import LESSON_STEPS, LessonContent
 from core.models import PracticeResult
 from storage.repo import Stats
@@ -163,3 +164,46 @@ def format_lesson_step(step_name: str, content: LessonContent, task_index: int =
     if step_name not in LESSON_STEPS:
         raise ValueError(f"Неизвестный шаг урока: {step_name!r}")
     return renderers[step_name](content)
+
+
+# ---------- Диагностика уровня (Фаза 3) ----------
+
+CEFR_LABELS_RU = {
+    "A1": "Начальный",
+    "A2": "Элементарный",
+    "B1": "Средний",
+    "B2": "Выше среднего",
+    "C1": "Продвинутый",
+}
+
+
+def format_diagnostic_question(task: DiagnosticTask, index: int, total: int) -> str:
+    return "\n".join(
+        [
+            _bold(f"🎯 Диагностика · задание {index} из {total}"),
+            "",
+            escape(task.text),
+            "",
+            "Ответь по-английски текстом или голосом.",
+        ]
+    )
+
+
+def format_level_result(assessment: DiagnosticAssessment, estimated: bool = False) -> str:
+    label = CEFR_LABELS_RU.get(assessment.level, assessment.level)
+    lines = [_bold(f"🎯 Твой уровень: {assessment.level} — {label}")]
+    if estimated:
+        lines += ["", "⚠️ Точная оценка не удалась, уровень определён приблизительно."]
+    if assessment.explanation_ru:
+        lines += ["", escape(assessment.explanation_ru)]
+    if assessment.weaknesses:
+        lines += ["", "🔍 Над чем поработать:"]
+        lines += [f"  • {escape(w)}" for w in assessment.weaknesses]
+    if assessment.recommendation:
+        lines += ["", f"💡 Совет: {escape(assessment.recommendation)}"]
+    lines += [
+        "",
+        "Дальше уроки будут подстроены под твой уровень. Начнём?",
+        "Жми «📚 Начать урок»!",
+    ]
+    return "\n".join(lines)
