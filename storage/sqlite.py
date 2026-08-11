@@ -1,9 +1,11 @@
 """Реализация хранилища на aiosqlite.
 
 Таблицы:
-- users: профили пользователей Telegram
+- users: профили пользователей Telegram (включая CEFR-уровень, Фаза 3)
 - messages: история диалога + результаты проверки (is_correct, issues_json)
   Та же таблица даёт и историю для промпта, и статистику практики.
+- lesson_sessions: состояние структурированных уроков
+- diagnostic_sessions: состояние диагностики уровня (Фаза 3)
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
-from .repo import LessonSession, Repository, Stats, UserRow
+from .repo import DiagnosticSession, LessonSession, Repository, Stats, UserRow
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -50,6 +52,18 @@ CREATE TABLE IF NOT EXISTS lesson_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_lesson_user ON lesson_sessions(user_id, status);
+
+CREATE TABLE IF NOT EXISTS diagnostic_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    questions_json TEXT NOT NULL,
+    answers_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_diagnostic_user ON diagnostic_sessions(user_id, status);
 """
 
 
@@ -66,7 +80,16 @@ class SQLiteRepository(Repository):
         self._conn = await aiosqlite.connect(self._db_path)
         self._conn.row_factory = aiosqlite.Row
         await self._conn.executescript(_SCHEMA)
+        await self._migrate()
         await self._conn.commit()
+
+    async def _migrate(self) -> None:
+        """Идемпотентные миграции для БД, созданных до появления новых колонок."""
+        cursor = await self._conn.execute("PRAGMA table_info(users)")
+        rows = await cursor.fetchall()
+        columns = {row["name"] for row in rows}
+        if "level" not in columns:
+            await self._conn.execute("ALTER TABLE users ADD COLUMN level TEXT")
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -86,12 +109,18 @@ class SQLiteRepository(Repository):
     ) -> UserRow:
         conn = self._require_conn()
         cursor = await conn.execute(
-            "SELECT id, tg_id, username, first_name FROM users WHERE tg_id = ?",
+            "SELECT id, tg_id, username, first_name, level FROM users WHERE tg_id = ?",
             (tg_id,),
         )
         row = await cursor.fetchone()
         if row is not None:
-            return UserRow(id=row["id"], tg_id=row["tg_id"], username=row["username"], first_name=row["first_name"])
+            return UserRow(
+                id=row["id"],
+                tg_id=row["tg_id"],
+                username=row["username"],
+                first_name=row["first_name"],
+                level=row["level"],
+            )
 
         cursor = await conn.execute(
             "INSERT INTO users (tg_id, username, first_name, created_at) VALUES (?, ?, ?, ?)",
@@ -99,6 +128,17 @@ class SQLiteRepository(Repository):
         )
         await conn.commit()
         return UserRow(id=cursor.lastrowid, tg_id=tg_id, username=username, first_name=first_name)
+
+    async def set_level(self, user_id: int, level: str) -> None:
+        conn = self._require_conn()
+        await conn.execute("UPDATE users SET level = ? WHERE id = ?", (level, user_id))
+        await conn.commit()
+
+    async def get_level(self, user_id: int) -> str | None:
+        conn = self._require_conn()
+        cursor = await conn.execute("SELECT level FROM users WHERE id = ?", (user_id,))
+        row = await cursor.fetchone()
+        return row["level"] if row else None
 
     async def add_user_message(
         self,
@@ -251,6 +291,87 @@ class SQLiteRepository(Repository):
         conn = self._require_conn()
         await conn.execute(
             "UPDATE lesson_sessions SET status = 'aborted', updated_at = ? WHERE user_id = ? AND status = 'active'",
+            (_now(), user_id),
+        )
+        await conn.commit()
+
+    # ---------- диагностика уровня (Фаза 3) ----------
+
+    @staticmethod
+    def _row_to_diagnostic(row) -> DiagnosticSession:
+        return DiagnosticSession(
+            id=row["id"],
+            user_id=row["user_id"],
+            questions_json=row["questions_json"],
+            answers_json=row["answers_json"],
+            status=row["status"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    async def start_diagnostic(self, user_id: int, questions_json: str) -> DiagnosticSession:
+        conn = self._require_conn()
+        now = _now()
+        cursor = await conn.execute(
+            "INSERT INTO diagnostic_sessions (user_id, questions_json, status, created_at, updated_at) "
+            "VALUES (?, ?, 'active', ?, ?)",
+            (user_id, questions_json, now, now),
+        )
+        await conn.commit()
+        return DiagnosticSession(
+            id=cursor.lastrowid,
+            user_id=user_id,
+            questions_json=questions_json,
+            answers_json="[]",
+            status="active",
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def get_active_diagnostic(self, user_id: int) -> DiagnosticSession | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM diagnostic_sessions WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return self._row_to_diagnostic(row) if row else None
+
+    async def append_diagnostic_answer(self, session_id: int, answer: str) -> None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT answers_json FROM diagnostic_sessions WHERE id = ?",
+            (session_id,),
+        )
+        row = await cursor.fetchone()
+        answers: list[str] = []
+        if row and row["answers_json"]:
+            try:
+                parsed = json.loads(row["answers_json"])
+            except (json.JSONDecodeError, TypeError):
+                parsed = None
+            if isinstance(parsed, list):
+                answers = [str(a) for a in parsed]
+        answers.append(answer)
+        await conn.execute(
+            "UPDATE diagnostic_sessions SET answers_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(answers, ensure_ascii=False), _now(), session_id),
+        )
+        await conn.commit()
+
+    async def finish_diagnostic(self, session_id: int) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE diagnostic_sessions SET status = 'finished', updated_at = ? WHERE id = ?",
+            (_now(), session_id),
+        )
+        await conn.commit()
+
+    async def abort_active_diagnostics(self, user_id: int) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE diagnostic_sessions SET status = 'aborted', updated_at = ? "
+            "WHERE user_id = ? AND status = 'active'",
             (_now(), user_id),
         )
         await conn.commit()

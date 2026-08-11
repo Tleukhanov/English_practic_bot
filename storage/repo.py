@@ -12,6 +12,7 @@ class UserRow:
     tg_id: int
     username: str | None = None
     first_name: str | None = None
+    level: str | None = None  # CEFR: A1 | A2 | B1 | B2 | C1 | None
 
 
 @dataclass
@@ -35,6 +36,17 @@ class LessonSession:
     updated_at: str
 
 
+@dataclass
+class DiagnosticSession:
+    id: int
+    user_id: int
+    questions_json: str  # список DiagnosticTask в JSON
+    answers_json: str  # список ответов пользователя в JSON
+    status: str  # active | finished | aborted
+    created_at: str
+    updated_at: str
+
+
 class Repository(ABC):
     @abstractmethod
     async def connect(self) -> None: ...
@@ -44,6 +56,12 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_or_create_user(self, tg_id: int, username: str | None = None, first_name: str | None = None) -> UserRow: ...
+
+    @abstractmethod
+    async def set_level(self, user_id: int, level: str) -> None: ...
+
+    @abstractmethod
+    async def get_level(self, user_id: int) -> str | None: ...
 
     @abstractmethod
     async def add_user_message(
@@ -79,3 +97,20 @@ class Repository(ABC):
 
     @abstractmethod
     async def abort_active_lessons(self, user_id: int) -> None: ...
+
+    # ---------- диагностика уровня (Фаза 3) ----------
+
+    @abstractmethod
+    async def start_diagnostic(self, user_id: int, questions_json: str) -> DiagnosticSession: ...
+
+    @abstractmethod
+    async def get_active_diagnostic(self, user_id: int) -> DiagnosticSession | None: ...
+
+    @abstractmethod
+    async def append_diagnostic_answer(self, session_id: int, answer: str) -> None: ...
+
+    @abstractmethod
+    async def finish_diagnostic(self, session_id: int) -> None: ...
+
+    @abstractmethod
+    async def abort_active_diagnostics(self, user_id: int) -> None: ...
