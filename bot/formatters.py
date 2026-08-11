@@ -56,8 +56,11 @@ def format_practice_result(result: PracticeResult, html: bool = True) -> str:
     return "\n".join(parts)
 
 
-def format_stats(stats: Stats, html: bool = True) -> str:
+def format_stats(stats: Stats, html: bool = True, level: str | None = None) -> str:
     lines = [_bold("Твоя статистика:", html), ""]
+    if level:
+        label = CEFR_LABELS_RU.get(level, level)
+        lines.append(f"🎯 Уровень: {level} — {label}")
     lines.append(f"✍️ Всего реплик: {stats.total_turns}")
     lines.append(f"✅ Верных: {stats.correct}")
     lines.append(f"❌ С ошибками: {stats.errors}")

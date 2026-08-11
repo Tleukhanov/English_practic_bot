@@ -23,7 +23,7 @@ async def cmd_stats(message: Message, repo: Repository) -> None:
         first_name=message.from_user.first_name,
     )
     stats = await repo.get_stats(user.id)
-    await message.answer(format_stats(stats), reply_markup=main_menu())
+    await message.answer(format_stats(stats, level=user.level), reply_markup=main_menu())
 
 
 @router.callback_query(F.data == "stats")
@@ -35,7 +35,7 @@ async def cb_stats(callback: CallbackQuery, repo: Repository) -> None:
         first_name=callback.from_user.first_name,
     )
     stats = await repo.get_stats(user.id)
-    await callback.message.answer(format_stats(stats), reply_markup=main_menu())
+    await callback.message.answer(format_stats(stats, level=user.level), reply_markup=main_menu())
 
 
 @router.callback_query(F.data == "help")

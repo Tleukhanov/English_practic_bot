@@ -66,6 +66,15 @@ def test_format_stats():
     assert "Словарный запас — 1" in text
 
 
+def test_format_stats_shows_level():
+    stats = Stats(total_turns=0)
+    text = format_stats(stats, level="B1")
+    assert "Уровень: B1" in text
+    assert CEFR_LABELS_RU["B1"] in text
+    text = format_stats(stats)
+    assert "Уровень" not in text
+
+
 def _sample_lesson() -> LessonContent:
     return LessonContent(
         topic="Travelling",

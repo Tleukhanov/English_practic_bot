@@ -66,18 +66,27 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
             "или «⏹️ Завершить», чтобы закрыть его."
         )
         return
+    if await repo.get_active_diagnostic(user.id):
+        await target.answer(
+            "🎯 Сначала заверши диагностику уровня: ответь на текущее задание "
+            "или нажми «⏹️ Завершить досрочно», затем возвращайся к уроку."
+        )
+        return
 
     status = await target.answer("⏳ Составляю структурированный урок...")
     try:
-        content = await lesson_service.generate(topic)
+        content = await lesson_service.generate(topic, level=user.level)
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)
         await status.edit_text("⚠️ Не удалось составить урок. Проверь LLM_API_KEY в .env и попробуй ещё раз.")
         return
 
     session = await repo.start_lesson(user.id, content.topic, lesson_content_to_json(content))
-    await status.edit_text(format_lesson_step("intro", content), reply_markup=lesson_keyboard())
-    logger.info("Урок начат: user=%s topic=%s session=%s", user.id, content.topic, session.id)
+    intro = format_lesson_step("intro", content)
+    if user.level is None:
+        intro = "🎯 Совет: пройди /diagnostic — тогда уроки будут точно под твой уровень.\n\n" + intro
+    await status.edit_text(intro, reply_markup=lesson_keyboard())
+    logger.info("Урок начат: user=%s topic=%s session=%s level=%s", user.id, content.topic, session.id, user.level)
 
 
 @router.message(Command("lesson"))
