@@ -56,6 +56,50 @@ def format_practice_result(result: PracticeResult, html: bool = True) -> str:
     return "\n".join(parts)
 
 
+def format_practice_soft(result: PracticeResult) -> str:
+    """Короткий дружелюбный ответ: без тыканья в ошибки.
+
+    При ошибке — мягкая подсказка и кнопка «Показать ошибку» (см. format_reveal).
+    """
+    if result.is_correct:
+        verdict = "✅ Верно!"
+        if result.tone:
+            verdict += f" {result.tone}"
+        parts = [verdict]
+        if result.next_question:
+            parts += ["", f"💬 {escape(result.next_question)}"]
+        return "\n".join(parts)
+
+    parts = ["❗ Хм, кажется, в этой фразе есть небольшая ошибка 🤏"]
+    if result.next_question:
+        parts += ["", f"💬 {escape(result.next_question)}"]
+    parts += ["", "Нажми «🔍 Показать ошибку», чтобы увидеть, как сказать правильно."]
+    return "\n".join(parts)
+
+
+def format_reveal(corrected_text: str, issues: list[dict]) -> str:
+    """Подробный разбор по кнопке «Показать ошибку»: исправленный вариант и ошибки."""
+    lines: list[str] = []
+    if corrected_text:
+        lines.append(f"📝 {_bold('Исправленный вариант:')}")
+        lines.append(escape(corrected_text))
+        lines.append("")
+
+    if issues:
+        for index, issue in enumerate(issues, start=1):
+            category = CATEGORY_LABELS.get(str(issue.get("category", "")), str(issue.get("category", "")) or "Ошибка")
+            line = f"{index}. {_bold(category)}: {escape(str(issue.get('problem', '')))}"
+            if issue.get("suggestion"):
+                line += f"\n   Как исправить: {escape(str(issue['suggestion']))}"
+            if issue.get("correction"):
+                line += f"\n   Правильно: <i>{escape(str(issue['correction']))}</i>"
+            lines.append(line)
+    else:
+        lines.append("Фраза была в порядке 🙂")
+
+    return "\n".join(lines)
+
+
 def format_stats(stats: Stats, html: bool = True, level: str | None = None) -> str:
     lines = [_bold("Твоя статистика:", html), ""]
     if level:

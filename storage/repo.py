@@ -84,6 +84,9 @@ class Repository(ABC):
     async def get_stats(self, user_id: int) -> Stats: ...
 
     @abstractmethod
+    async def get_last_correction(self, user_id: int) -> dict | None: ...
+
+    @abstractmethod
     async def start_lesson(self, user_id: int, topic: str, content_json: str) -> LessonSession: ...
 
     @abstractmethod

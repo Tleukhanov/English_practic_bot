@@ -22,7 +22,7 @@ from providers.base import STTProvider, TTSProvider
 from storage.repo import Repository
 
 from ..diagnostic import process_diagnostic_answer
-from ..flow import get_or_create_user, run_practice
+from ..flow import get_or_create_user, practice_markup, run_practice
 from ..keyboards import lesson_keyboard
 from ..utils import escape
 
@@ -156,7 +156,7 @@ async def on_voice(
         )
         return
 
-    await status.edit_text(turn.reply, reply_markup=reply_markup)
+    await status.edit_text(turn.reply, reply_markup=practice_markup(turn.result, reply_markup))
     await _speak(
         message,
         tts,

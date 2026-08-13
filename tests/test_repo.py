@@ -75,6 +75,28 @@ async def test_stats_empty(repo):
     assert stats.top_categories == []
 
 
+async def test_get_last_correction_returns_latest_failed_phrase(repo):
+    user = await repo.get_or_create_user(556)
+    assert await repo.get_last_correction(user.id) is None
+
+    await repo.add_user_message(user.id, "I good", is_correct=False)
+    await repo.add_user_message(
+        user.id,
+        "He go school",
+        is_correct=False,
+        issues_json=json.dumps([{"category": "grammar", "problem": "глагол"}]),
+        corrected_text="He goes to school.",
+    )
+    await repo.add_user_message(user.id, "Perfect now", is_correct=True, corrected_text="Perfect now.")
+
+    last = await repo.get_last_correction(user.id)
+    assert last is not None
+    assert last["is_correct"] is False
+    assert last["corrected_text"] == "He goes to school."
+    issues = json.loads(last["issues_json"])
+    assert issues == [{"category": "grammar", "problem": "глагол"}]
+
+
 async def test_lesson_lifecycle(repo):
     user = await repo.get_or_create_user(600)
     session = await repo.start_lesson(user.id, "Travelling", '{"topic": "Travelling"}')

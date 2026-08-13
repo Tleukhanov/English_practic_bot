@@ -39,3 +39,12 @@ def diagnostic_keyboard() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def reveal_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка «Показать ошибку» — мягкий фидбек вместо вываливания всех ошибок сразу."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Показать ошибку", callback_data="practice:reveal")],
+        ]
+    )

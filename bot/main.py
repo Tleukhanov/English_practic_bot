@@ -21,8 +21,9 @@ from providers import create_llm, create_stt, create_tts
 from storage.sqlite import SQLiteRepository
 
 from .config import get_settings
-from .handlers import menu, start, text, voice
 from .diagnostic import router as diagnostic_router
+from .flow import router as practice_router
+from .handlers import menu, start, text, voice
 from .lessons import router as lessons_router
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,7 @@ async def main() -> None:
 
     dp.include_router(start.router)
     dp.include_router(menu.router)
+    dp.include_router(practice_router)
     dp.include_router(lessons_router)
     dp.include_router(diagnostic_router)
     dp.include_router(text.router)

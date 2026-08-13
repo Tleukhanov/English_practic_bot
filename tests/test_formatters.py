@@ -11,6 +11,8 @@ from bot.formatters import (
     format_lesson_task,
     format_level_result,
     format_practice_result,
+    format_practice_soft,
+    format_reveal,
     format_stats,
 )
 
@@ -73,6 +75,64 @@ def test_format_stats_shows_level():
     assert CEFR_LABELS_RU["B1"] in text
     text = format_stats(stats)
     assert "Уровень" not in text
+
+
+def test_format_practice_soft_hides_issues_on_correct():
+    result = PracticeResult(
+        is_correct=True,
+        corrected_text="I went to school yesterday.",
+        issues=[],
+        next_question="What did you learn there?",
+        tone="Отлично!",
+    )
+    text = format_practice_soft(result)
+    assert "✅ Верно!" in text
+    assert "Отлично!" in text
+    assert "What did you learn there?" in text
+    assert "Исправленный вариант" not in text
+    assert "Показать ошибку" not in text
+
+
+def test_format_practice_soft_offers_reveal_on_error():
+    result = PracticeResult(
+        is_correct=False,
+        corrected_text="He <go> to school.",
+        issues=[Issue(category="grammar", problem="время", suggestion="", correction="")],
+        next_question="Where does he go?",
+        tone="",
+    )
+    text = format_practice_soft(result)
+    assert "Показать ошибку" in text
+    assert "Where does he go?" in text
+    assert "Есть ошибки" not in text
+    assert "He &lt;go&gt; to school." not in text
+
+
+def test_format_reveal_shows_correction_and_issues():
+    issues = [
+        {
+            "category": "grammar",
+            "problem": "неверное время",
+            "suggestion": "используй Past Simple",
+            "correction": "went",
+        }
+    ]
+    text = format_reveal("I went to school yesterday.", issues)
+    assert "Исправленный вариант" in text
+    assert "I went to school yesterday." in text
+    assert "Грамматика" in text
+    assert "неверное время" in text
+    assert "используй Past Simple" in text
+    assert "<i>went</i>" in text
+
+
+def test_format_reveal_escapes_html_and_handles_empty():
+    text = format_reveal("<money> matters", [{"category": "x", "problem": "<bad>"}])
+    assert "&lt;money&gt;" in text
+    assert "&lt;bad&gt;" in text
+    assert "Фраза была в порядке" not in text
+    empty = format_reveal("", [])
+    assert "Фраза была в порядке" in empty
 
 
 def _sample_lesson() -> LessonContent:

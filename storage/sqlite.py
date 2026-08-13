@@ -214,6 +214,25 @@ class SQLiteRepository(Repository):
             top_categories=top,
         )
 
+    async def get_last_correction(self, user_id: int) -> dict | None:
+        """Последний разбор фразы пользователя для кнопки «Показать ошибку»."""
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT is_correct, corrected_text, issues_json FROM messages "
+            "WHERE user_id = ? AND role = 'user' AND is_correct = 0 "
+            "AND corrected_text IS NOT NULL AND corrected_text != '' "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "is_correct": bool(row["is_correct"]),
+            "corrected_text": row["corrected_text"],
+            "issues_json": row["issues_json"] or "",
+        }
+
     # ---------- уроки ----------
 
     @staticmethod
