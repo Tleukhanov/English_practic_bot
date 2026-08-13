@@ -36,6 +36,11 @@ def _temp_paths(chat_id: int, message_id: int) -> tuple[str, str]:
     return f"{base}.ogg", f"{base}.wav"
 
 
+def _spoken_text(result) -> str:
+    """Что бот говорит голосом: естественная реплика диалога, не пересказ пользователя."""
+    return (result.spoken_reply or result.next_question).strip()
+
+
 def _cleanup(*paths: str) -> None:
     for path in paths:
         try:
@@ -155,7 +160,7 @@ async def on_voice(
     await _speak(
         message,
         tts,
-        turn.result.corrected_text,
+        _spoken_text(turn.result),
         message.chat.id,
         message.message_id,
     )

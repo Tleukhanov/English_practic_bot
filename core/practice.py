@@ -36,12 +36,14 @@ JSON schema:
     }
   ],
   "next_question": "a short natural follow-up question to continue the dialogue, in English",
+  "spoken_reply": "a short natural spoken reply to the student's message in English, as if you two are having a voice conversation; say something a conversation partner would say, never repeat the student's words and never recite corrections",
   "tone": "a short encouraging phrase in Russian, e.g. \"Отлично!\""
 }
 
 Rules:
 - "issues" must be an empty array when is_correct is true.
 - "corrected_text" is required even when correct (keep the student's own phrasing, fix only real mistakes).
+- "spoken_reply" is required: it is what gets read aloud by text-to-speech.
 - Explanations ("problem", "suggestion") and "tone" must be in Russian. Everything else in English.
 - Never translate the student's message to Russian; the dialogue stays in English.
 """
@@ -80,6 +82,7 @@ def parse_practice_response(raw: str) -> PracticeResult:
         corrected_text=str(payload.get("corrected_text", "")).strip(),
         issues=issues,
         next_question=str(payload.get("next_question", "")).strip(),
+        spoken_reply=str(payload.get("spoken_reply", "")).strip(),
         tone=str(payload.get("tone", "")).strip(),
     )
 

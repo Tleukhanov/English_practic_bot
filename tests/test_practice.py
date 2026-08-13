@@ -12,12 +12,14 @@ def test_parse_plain_json_with_issues():
         '{"is_correct": false, "corrected_text": "I went to the store yesterday.", '
         '"issues": [{"category": "grammar", "problem": "неверное время", '
         '"suggestion": "используй Past Simple", "correction": "went"}], '
-        '"next_question": "What did you buy there?", "tone": "Почти!"}'
+        '"next_question": "What did you buy there?", '
+        '"spoken_reply": "Nice! I went to the mall too, what did you buy there?", "tone": "Почти!"}'
     )
     result = parse_practice_response(raw)
     assert result.is_correct is False
     assert result.corrected_text == "I went to the store yesterday."
     assert result.next_question == "What did you buy there?"
+    assert result.spoken_reply == "Nice! I went to the mall too, what did you buy there?"
     assert result.tone == "Почти!"
     assert len(result.issues) == 1
     issue = result.issues[0]
@@ -45,6 +47,7 @@ def test_parse_missing_optional_fields_uses_defaults():
     assert result.is_correct is True
     assert result.issues == []
     assert result.next_question == ""
+    assert result.spoken_reply == ""
 
 
 def test_parse_issue_without_all_fields():
@@ -64,6 +67,32 @@ def test_parse_non_dict_issues_are_skipped():
 def test_parse_invalid_json_raises():
     with pytest.raises(PracticeParseError):
         parse_practice_response("просто текст без JSON")
+
+
+def test_spoken_text_prefers_reply_over_question():
+    from bot.handlers.voice import _spoken_text
+    from core.models import PracticeResult
+
+    result = PracticeResult(
+        is_correct=True,
+        corrected_text="Hello!",
+        next_question="How are you?",
+        spoken_reply="I'm great, thanks! What about you?",
+    )
+    assert _spoken_text(result) == "I'm great, thanks! What about you?"
+
+
+def test_spoken_text_falls_back_to_next_question():
+    from bot.handlers.voice import _spoken_text
+    from core.models import PracticeResult
+
+    result = PracticeResult(
+        is_correct=True,
+        corrected_text="Hello!",
+        next_question="How are you?",
+        spoken_reply="",
+    )
+    assert _spoken_text(result) == "How are you?"
 
 
 def test_parse_empty_string_raises():

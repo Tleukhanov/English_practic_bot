@@ -23,4 +23,5 @@ class PracticeResult:
     corrected_text: str  # полная исправленная версия фразы
     issues: list[Issue] = field(default_factory=list)
     next_question: str = ""  # следующий вопрос диалога (на английском)
+    spoken_reply: str = ""  # реплика бота для озвучки (естественный ответ, не пересказ)
     tone: str = ""  # короткая одобрительная фраза (на русском)
