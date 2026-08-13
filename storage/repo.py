@@ -96,6 +96,9 @@ class Repository(ABC):
     async def finish_lesson(self, session_id: int) -> None: ...
 
     @abstractmethod
+    async def finish_active_lessons(self, user_id: int) -> None: ...
+
+    @abstractmethod
     async def abort_active_lessons(self, user_id: int) -> None: ...
 
     # ---------- диагностика уровня (Фаза 3) ----------

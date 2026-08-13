@@ -103,7 +103,12 @@ async def cb_lesson_start(callback: CallbackQuery, repo: Repository, lesson_serv
 
 @router.callback_query(F.data == "lesson:next")
 async def cb_lesson_next(callback: CallbackQuery, repo: Repository) -> None:
-    session = await repo.get_active_lesson(callback.from_user.id)
+    user = await repo.get_or_create_user(
+        callback.from_user.id,
+        username=callback.from_user.username,
+        first_name=callback.from_user.first_name,
+    )
+    session = await repo.get_active_lesson(user.id)
     if session is None:
         await callback.answer("Урок уже завершён")
         return
@@ -122,7 +127,7 @@ async def cb_lesson_next(callback: CallbackQuery, repo: Repository) -> None:
 
     new_step, new_task_index, finished = next_lesson_position(session.step, session.task_index, len(content.tasks))
     if finished:
-        await repo.finish_lesson(session.id)
+        await repo.finish_active_lessons(user.id)
         await callback.message.edit_text(_finished_text(content), reply_markup=main_menu())
         return
 
@@ -133,7 +138,12 @@ async def cb_lesson_next(callback: CallbackQuery, repo: Repository) -> None:
 
 @router.callback_query(F.data == "lesson:repeat")
 async def cb_lesson_repeat(callback: CallbackQuery, repo: Repository) -> None:
-    session = await repo.get_active_lesson(callback.from_user.id)
+    user = await repo.get_or_create_user(
+        callback.from_user.id,
+        username=callback.from_user.username,
+        first_name=callback.from_user.first_name,
+    )
+    session = await repo.get_active_lesson(user.id)
     if session is None:
         await callback.answer("Урок уже завершён")
         return
@@ -145,8 +155,11 @@ async def cb_lesson_repeat(callback: CallbackQuery, repo: Repository) -> None:
 
 @router.callback_query(F.data == "lesson:end")
 async def cb_lesson_end(callback: CallbackQuery, repo: Repository) -> None:
-    session = await repo.get_active_lesson(callback.from_user.id)
-    if session is not None:
-        await repo.finish_lesson(session.id)
+    user = await repo.get_or_create_user(
+        callback.from_user.id,
+        username=callback.from_user.username,
+        first_name=callback.from_user.first_name,
+    )
+    await repo.finish_active_lessons(user.id)
     await callback.answer()
     await callback.message.edit_text("⏹️ Урок завершён. Возвращайся за новым: /lesson", reply_markup=main_menu())

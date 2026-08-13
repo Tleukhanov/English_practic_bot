@@ -233,6 +233,11 @@ class SQLiteRepository(Repository):
     async def start_lesson(self, user_id: int, topic: str, content_json: str) -> LessonSession:
         conn = self._require_conn()
         now = _now()
+        # Атомарно закрываем старые активные уроки, чтобы не копились «зависшие» сессии.
+        await conn.execute(
+            "UPDATE lesson_sessions SET status = 'aborted', updated_at = ? WHERE user_id = ? AND status = 'active'",
+            (now, user_id),
+        )
         cursor = await conn.execute(
             "INSERT INTO lesson_sessions (user_id, topic, content_json, status, created_at, updated_at) "
             "VALUES (?, ?, ?, 'active', ?, ?)",
@@ -287,6 +292,14 @@ class SQLiteRepository(Repository):
         )
         await conn.commit()
 
+    async def finish_active_lessons(self, user_id: int) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE lesson_sessions SET status = 'finished', updated_at = ? WHERE user_id = ? AND status = 'active'",
+            (_now(), user_id),
+        )
+        await conn.commit()
+
     async def abort_active_lessons(self, user_id: int) -> None:
         conn = self._require_conn()
         await conn.execute(
@@ -312,6 +325,12 @@ class SQLiteRepository(Repository):
     async def start_diagnostic(self, user_id: int, questions_json: str) -> DiagnosticSession:
         conn = self._require_conn()
         now = _now()
+        # Атомарно закрываем старые активные диагностики, чтобы не копились «зависшие» сессии.
+        await conn.execute(
+            "UPDATE diagnostic_sessions SET status = 'aborted', updated_at = ? "
+            "WHERE user_id = ? AND status = 'active'",
+            (now, user_id),
+        )
         cursor = await conn.execute(
             "INSERT INTO diagnostic_sessions (user_id, questions_json, status, created_at, updated_at) "
             "VALUES (?, ?, 'active', ?, ?)",

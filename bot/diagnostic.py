@@ -151,7 +151,12 @@ async def cb_diagnostic_skip(
     repo: Repository,
     diagnostic_service: DiagnosticService,
 ) -> None:
-    session = await repo.get_active_diagnostic(callback.from_user.id)
+    user = await repo.get_or_create_user(
+        callback.from_user.id,
+        username=callback.from_user.username,
+        first_name=callback.from_user.first_name,
+    )
+    session = await repo.get_active_diagnostic(user.id)
     if session is None:
         await callback.answer("Диагностика уже завершена")
         return
@@ -171,13 +176,18 @@ async def cb_diagnostic_end(
     repo: Repository,
     diagnostic_service: DiagnosticService,
 ) -> None:
-    session = await repo.get_active_diagnostic(callback.from_user.id)
+    user = await repo.get_or_create_user(
+        callback.from_user.id,
+        username=callback.from_user.username,
+        first_name=callback.from_user.first_name,
+    )
+    session = await repo.get_active_diagnostic(user.id)
     if session is None:
         await callback.answer("Диагностика уже завершена")
         return
     await callback.answer()
     if not any(a.strip() for a in _answers_of(session)):
-        await repo.abort_active_diagnostics(callback.from_user.id)
+        await repo.abort_active_diagnostics(user.id)
         await callback.message.edit_text(
             "⏹️ Диагностика отменена. Вернёшься, когда будешь готов: /diagnostic",
             reply_markup=main_menu(),

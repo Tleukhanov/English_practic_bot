@@ -104,6 +104,35 @@ async def test_abort_active_lessons(repo):
     assert await repo.get_active_lesson(user.id) is None
 
 
+async def test_start_lesson_replaces_prior_active(repo):
+    user = await repo.get_or_create_user(710)
+    first = await repo.start_lesson(user.id, "Chess", "{}")
+    second = await repo.start_lesson(user.id, "Cooking", "{}")
+    active = await repo.get_active_lesson(user.id)
+    assert active.topic == "Cooking"
+    # старый урок не остаётся активным
+    cursor = await repo._conn.execute(
+        "SELECT status FROM lesson_sessions WHERE id = ?", (first.id,)
+    )
+    row = await cursor.fetchone()
+    assert row["status"] == "aborted"
+    assert second.id != first.id
+
+
+async def test_finish_active_lessons_closes_all(repo):
+    user = await repo.get_or_create_user(720)
+    first = await repo.start_lesson(user.id, "Chess", "{}")
+    second = await repo.start_lesson(user.id, "Cooking", "{}")
+    await repo.finish_active_lessons(user.id)
+    assert await repo.get_active_lesson(user.id) is None
+    cursor = await repo._conn.execute(
+        "SELECT status FROM lesson_sessions WHERE id IN (?, ?)", (first.id, second.id)
+    )
+    statuses = {row["status"] for row in await cursor.fetchall()}
+    assert statuses == {"aborted", "finished"}
+    assert "active" not in statuses
+
+
 async def test_active_lessons_are_per_user(repo):
     alice = await repo.get_or_create_user(801)
     bob = await repo.get_or_create_user(802)

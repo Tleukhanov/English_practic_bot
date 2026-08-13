@@ -86,6 +86,19 @@ async def test_abort_active_diagnostics(repo):
     assert await repo.get_active_diagnostic(user.id) is None
 
 
+async def test_start_diagnostic_replaces_prior_active(repo):
+    user = await repo.get_or_create_user(503)
+    first = await repo.start_diagnostic(user.id, "[]")
+    second = await repo.start_diagnostic(user.id, "[]")
+    active = await repo.get_active_diagnostic(user.id)
+    assert active.id == second.id
+    cursor = await repo._conn.execute(
+        "SELECT status FROM diagnostic_sessions WHERE id = ?", (first.id,)
+    )
+    row = await cursor.fetchone()
+    assert row["status"] == "aborted"
+
+
 async def test_active_diagnostics_are_per_user(repo):
     alice = await repo.get_or_create_user(601)
     bob = await repo.get_or_create_user(602)
