@@ -49,9 +49,25 @@ Rules:
 """
 
 
-def build_prompt(text: str, history: list[dict[str, str]], max_history: int = 6) -> list[dict[str, str]]:
-    """Собирает сообщения для LLM: системный промпт + недавняя история + текущая реплика."""
-    messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+def build_prompt(
+    text: str,
+    history: list[dict[str, str]],
+    max_history: int = 6,
+    profile: str | None = None,
+) -> list[dict[str, str]]:
+    """Собирает сообщения для LLM: системный промпт + недавняя история + текущая реплика.
+
+    profile — сниппет из памяти пользователя (Фаза 4), добавляется в системный
+    промпт, чтобы диалог учитывал интересы, цель и слабые места студента.
+    """
+    system = SYSTEM_PROMPT
+    if profile:
+        system += (
+            f"\n\n{profile}\n"
+            "Tailor follow-up questions and examples to the student's interests, "
+            "level and weak areas when possible."
+        )
+    messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     for item in history[-max_history:]:
         if item.get("role") in {"user", "assistant"} and item.get("content"):
             messages.append({"role": item["role"], "content": item["content"]})
@@ -94,7 +110,12 @@ class PracticeService:
         self._llm = llm
         self._max_history = max_history
 
-    async def analyze(self, text: str, history: list[dict[str, str]]) -> PracticeResult:
-        messages = build_prompt(text, history, max_history=self._max_history)
+    async def analyze(
+        self,
+        text: str,
+        history: list[dict[str, str]],
+        profile: str | None = None,
+    ) -> PracticeResult:
+        messages = build_prompt(text, history, max_history=self._max_history, profile=profile)
         raw = await self._llm.chat(messages)
         return parse_practice_response(raw)

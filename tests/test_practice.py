@@ -120,3 +120,10 @@ def test_build_prompt_skips_bad_history_items():
     history = [{"role": "user", "content": ""}, {"role": "system", "content": "ignored"}, {"role": "user", "content": "ok"}]
     messages = build_prompt("last", history, max_history=10)
     assert [m["content"] for m in _non_system(messages)] == ["ok", "last"]
+
+
+def test_build_prompt_includes_profile_snippet():
+    messages = build_prompt("hi", [], profile="Student profile: Interests: chess; Goal: свободное общение.")
+    system = messages[0]["content"]
+    assert "Interests: chess" in system
+    assert "weak areas" in system.lower()

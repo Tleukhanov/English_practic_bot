@@ -95,18 +95,29 @@ LEVEL_RULES = {
 }
 
 
-def _render_system_prompt(level: str | None) -> str:
-    return SYSTEM_PROMPT_TEMPLATE.replace(
+def _render_system_prompt(level: str | None, profile: str | None = None) -> str:
+    text = SYSTEM_PROMPT_TEMPLATE.replace(
         "__LEVEL_DESC__", LEVEL_DESCRIPTIONS.get(level, LEVEL_DESCRIPTIONS[None])
     ).replace(
         "__LEVEL_RULES__", LEVEL_RULES.get(level, "")
     )
+    if profile:
+        text += (
+            f"\n\n{profile}\n"
+            "If the student has interests, prefer a lesson around one of them "
+            "(pick the most engaging topic). Address their weak areas in the grammar point."
+        )
+    return text
 
 
-def build_lesson_prompt(topic: str | None, level: str | None = None) -> list[dict[str, str]]:
+def build_lesson_prompt(
+    topic: str | None,
+    level: str | None = None,
+    profile: str | None = None,
+) -> list[dict[str, str]]:
     user_message = f"Create a structured lesson. Topic: {topic}" if topic else "Create a structured lesson on an interesting topic of your choice."
     return [
-        {"role": "system", "content": _render_system_prompt(level)},
+        {"role": "system", "content": _render_system_prompt(level, profile)},
         {"role": "user", "content": user_message},
     ]
 
@@ -175,7 +186,12 @@ class LessonService:
     def __init__(self, llm: LLMProvider):
         self._llm = llm
 
-    async def generate(self, topic: str | None = None, level: str | None = None) -> LessonContent:
-        messages = build_lesson_prompt(topic, level=level)
+    async def generate(
+        self,
+        topic: str | None = None,
+        level: str | None = None,
+        profile: str | None = None,
+    ) -> LessonContent:
+        messages = build_lesson_prompt(topic, level=level, profile=profile)
         raw = await self._llm.chat(messages, temperature=0.7)
         return parse_lesson_response(raw)

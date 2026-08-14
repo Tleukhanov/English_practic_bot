@@ -94,6 +94,13 @@ def test_build_prompt_with_unknown_level_falls_back_to_b1():
     assert "intermediate (B1)" in messages[0]["content"]
 
 
+def test_build_prompt_with_profile():
+    messages = build_lesson_prompt(None, profile="Student profile: Interests: chess; Weak areas: Present Perfect.")
+    system = messages[0]["content"]
+    assert "Interests: chess" in system
+    assert "weak areas" in system.lower()
+
+
 def test_lesson_content_json_roundtrip():
     content = parse_lesson_response(VALID_LESSON_JSON)
     restored = lesson_content_from_json(lesson_content_to_json(content))
