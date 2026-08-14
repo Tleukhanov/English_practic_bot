@@ -6,6 +6,7 @@
   Та же таблица даёт и историю для промпта, и статистику практики.
 - lesson_sessions: состояние структурированных уроков
 - diagnostic_sessions: состояние диагностики уровня (Фаза 3)
+- user_profiles: память пользователя (Фаза 4): цели, интересы, слабые места
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
-from .repo import DiagnosticSession, LessonSession, Repository, Stats, UserRow
+from .repo import DiagnosticSession, LessonSession, Repository, Stats, UserProfile, UserRow
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -64,6 +65,16 @@ CREATE TABLE IF NOT EXISTS diagnostic_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_diagnostic_user ON diagnostic_sessions(user_id, status);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    goal TEXT NOT NULL DEFAULT '',
+    interests TEXT NOT NULL DEFAULT '',
+    weak_areas TEXT NOT NULL DEFAULT '',
+    preferred_format TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -139,6 +150,48 @@ class SQLiteRepository(Repository):
         cursor = await conn.execute("SELECT level FROM users WHERE id = ?", (user_id,))
         row = await cursor.fetchone()
         return row["level"] if row else None
+
+    async def get_profile(self, user_id: int) -> UserProfile | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT user_id, goal, interests, weak_areas, preferred_format, notes, updated_at "
+            "FROM user_profiles WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return UserProfile(
+            user_id=row["user_id"],
+            goal=row["goal"],
+            interests=row["interests"],
+            weak_areas=row["weak_areas"],
+            preferred_format=row["preferred_format"],
+            notes=row["notes"],
+            updated_at=row["updated_at"],
+        )
+
+    async def save_profile(self, profile: UserProfile) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "INSERT INTO user_profiles "
+            "(user_id, goal, interests, weak_areas, preferred_format, notes, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET "
+            "goal = excluded.goal, interests = excluded.interests, weak_areas = excluded.weak_areas, "
+            "preferred_format = excluded.preferred_format, notes = excluded.notes, "
+            "updated_at = excluded.updated_at",
+            (
+                profile.user_id,
+                profile.goal,
+                profile.interests,
+                profile.weak_areas,
+                profile.preferred_format,
+                profile.notes,
+                profile.updated_at,
+            ),
+        )
+        await conn.commit()
 
     async def add_user_message(
         self,

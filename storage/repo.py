@@ -16,6 +16,23 @@ class UserRow:
 
 
 @dataclass
+class UserProfile:
+    """Память пользователя (Фаза 4): то, что LLM выводит из диалога.
+
+    Поля хранятся как текст (списки — через запятую), чтобы было просто
+    встраивать их в промпты.
+    """
+
+    user_id: int
+    goal: str = ""  # цель обучения, коротко (на русском)
+    interests: str = ""  # интересы, через запятую
+    weak_areas: str = ""  # повторяющиеся ошибки, через запятую (напр. "Present Perfect, артикли")
+    preferred_format: str = ""  # voice | text | ""
+    notes: str = ""  # особенности поведения (на русском)
+    updated_at: str = ""
+
+
+@dataclass
 class Stats:
     total_turns: int = 0  # всего реплик пользователя
     correct: int = 0  # корректных
@@ -62,6 +79,12 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_level(self, user_id: int) -> str | None: ...
+
+    @abstractmethod
+    async def get_profile(self, user_id: int) -> UserProfile | None: ...
+
+    @abstractmethod
+    async def save_profile(self, profile: UserProfile) -> None: ...
 
     @abstractmethod
     async def add_user_message(
