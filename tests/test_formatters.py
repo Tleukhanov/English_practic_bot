@@ -12,9 +12,11 @@ from bot.formatters import (
     format_level_result,
     format_practice_result,
     format_practice_soft,
+    format_profile,
     format_reveal,
     format_stats,
 )
+from storage.repo import UserProfile
 
 
 def test_format_correct_result():
@@ -133,6 +135,31 @@ def test_format_reveal_escapes_html_and_handles_empty():
     assert "Фраза была в порядке" not in text
     empty = format_reveal("", [])
     assert "Фраза была в порядке" in empty
+
+
+def test_format_profile_filled():
+    profile = UserProfile(
+        user_id=1,
+        goal="свободное общение",
+        interests="chess, technology",
+        weak_areas="Present Perfect",
+        preferred_format="voice",
+        notes="любит короткие объяснения",
+    )
+    text = format_profile(profile, level="B1")
+    assert "Мой профиль" in text
+    assert "B1" in text
+    assert "свободное общение" in text
+    assert "chess, technology" in text
+    assert "Present Perfect" in text
+    assert "голосовые тренировки" in text
+    assert "любит короткие объяснения" in text
+
+
+def test_format_profile_empty():
+    text = format_profile(None, level=None)
+    assert "ещё не определён" in text
+    assert "расскажи, зачем учишь английский" in text
 
 
 def _sample_lesson() -> LessonContent:

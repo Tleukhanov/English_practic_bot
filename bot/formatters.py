@@ -5,7 +5,7 @@ from __future__ import annotations
 from core.diagnostic import DiagnosticAssessment, DiagnosticTask
 from core.lessons import LESSON_STEPS, LessonContent
 from core.models import PracticeResult
-from storage.repo import Stats
+from storage.repo import Stats, UserProfile
 
 from .utils import escape
 
@@ -98,6 +98,40 @@ def format_reveal(corrected_text: str, issues: list[dict]) -> str:
         lines.append("Фраза была в порядке 🙂")
 
     return "\n".join(lines)
+
+
+def format_profile(profile: UserProfile | None, level: str | None) -> str:
+    """Память пользователя (Фаза 4): цель, интересы, слабые места, предпочтения."""
+    lines = [_bold("🧠 Мой профиль"), ""]
+    lines.append(f"🎯 Уровень: {level or 'ещё не определён (пройди /diagnostic)'}")
+    if level:
+        label = CEFR_LABELS_RU.get(level, level)
+        lines.append(f"   {label}")
+
+    rows = [
+        ("🎯 Цель", profile.goal if profile else "", "расскажи, зачем учишь английский"),
+        ("💡 Интересы", profile.interests if profile else "", "пиши о любимых темах — сделаю уроки вокруг них"),
+        ("⚠️ Слабые места", profile.weak_areas if profile else "", "пока не накопил данных"),
+        ("🎤 Формат", _format_preference(profile) if profile else "", "предпочитаешь голос или текст?"),
+        ("📌 Заметка", profile.notes if profile else "", "—"),
+    ]
+    for label, value, hint in rows:
+        if value:
+            lines.append(f"{label}: {value}")
+        else:
+            lines.append(f"{label}: <i>{hint}</i>")
+
+    lines += [
+        "",
+        "Я сам слежу за этим: просто продолжай практиковаться, и профиль будет заполняться.",
+    ]
+    return "\n".join(lines)
+
+
+def _format_preference(profile: UserProfile) -> str:
+    return {"voice": "голосовые тренировки", "text": "текстовые тренировки"}.get(
+        profile.preferred_format, ""
+    )
 
 
 def format_stats(stats: Stats, html: bool = True, level: str | None = None) -> str:
