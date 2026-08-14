@@ -17,6 +17,7 @@ from aiogram.types import BotCommand
 from core.diagnostic import DiagnosticService
 from core.lessons import LessonService
 from core.practice import PracticeService
+from core.profile import ProfileService
 from providers import create_llm, create_stt, create_tts
 from storage.sqlite import SQLiteRepository
 
@@ -64,6 +65,7 @@ async def main() -> None:
     practice = PracticeService(llm, max_history=settings.max_context_messages)
     lessons = LessonService(llm)
     diagnostic = DiagnosticService(llm)
+    profile = ProfileService(llm)
 
     bot = Bot(
         settings.telegram_bot_token,
@@ -75,6 +77,7 @@ async def main() -> None:
     dp["practice"] = practice
     dp["lesson_service"] = lessons
     dp["diagnostic_service"] = diagnostic
+    dp["profile_service"] = profile
     dp["stt"] = stt
     dp["tts"] = tts
     dp["settings"] = settings

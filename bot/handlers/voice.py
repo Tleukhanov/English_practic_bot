@@ -17,6 +17,7 @@ from aiogram.types import FSInputFile, Message
 from bot.config import Settings
 from core.diagnostic import DiagnosticService
 from core.practice import PracticeParseError, PracticeService
+from core.profile import ProfileService
 from providers.audio import to_ogg_opus, to_wav
 from providers.base import STTProvider, TTSProvider
 from storage.repo import Repository
@@ -94,6 +95,7 @@ async def on_voice(
     tts: TTSProvider,
     practice: PracticeService,
     diagnostic_service: DiagnosticService,
+    profile_service: ProfileService,
     settings: Settings,
 ) -> None:
     voice = message.voice
@@ -143,6 +145,7 @@ async def on_voice(
             settings,
             text,
             prefix=prefix,
+            profile_service=profile_service,
         )
     except PracticeParseError as exc:
         logger.warning("Не удалось разобрать ответ LLM: %s", exc)

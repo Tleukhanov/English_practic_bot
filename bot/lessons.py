@@ -19,6 +19,7 @@ from core.lessons import (
     lesson_content_from_json,
     lesson_content_to_json,
 )
+from core.profile import to_profile_snippet
 from storage.repo import Repository
 
 from .formatters import format_lesson_step
@@ -75,7 +76,10 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
 
     status = await target.answer("⏳ Составляю структурированный урок...")
     try:
-        content = await lesson_service.generate(topic, level=user.level)
+        profile = await repo.get_profile(user.id)
+        content = await lesson_service.generate(
+            topic, level=user.level, profile=to_profile_snippet(profile) or None
+        )
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)
         await status.edit_text("⚠️ Не удалось составить урок. Проверь LLM_API_KEY в .env и попробуй ещё раз.")

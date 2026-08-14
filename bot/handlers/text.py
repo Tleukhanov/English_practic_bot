@@ -14,6 +14,7 @@ from aiogram.types import Message
 from bot.config import Settings
 from core.diagnostic import DiagnosticService
 from core.practice import PracticeService
+from core.profile import ProfileService
 from storage.repo import Repository
 
 from ..diagnostic import process_diagnostic_answer
@@ -31,6 +32,7 @@ async def on_text(
     repo: Repository,
     practice: PracticeService,
     diagnostic_service: DiagnosticService,
+    profile_service: ProfileService,
     settings: Settings,
 ) -> None:
     text = message.text.strip()
@@ -45,7 +47,10 @@ async def on_text(
 
     session = await repo.get_active_lesson(user.id)
     if session is not None:
-        await answer_practice(message, repo, practice, settings, text, reply_markup=lesson_keyboard())
+        await answer_practice(
+            message, repo, practice, settings, text,
+            reply_markup=lesson_keyboard(), profile_service=profile_service,
+        )
         return
 
-    await answer_practice(message, repo, practice, settings, text)
+    await answer_practice(message, repo, practice, settings, text, profile_service=profile_service)
