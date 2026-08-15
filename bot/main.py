@@ -65,7 +65,7 @@ async def main() -> None:
     practice = PracticeService(llm, max_history=settings.max_context_messages)
     lessons = LessonService(llm)
     diagnostic = DiagnosticService(llm)
-    profile = ProfileService(llm)
+    profile_service = ProfileService(llm)
 
     bot = Bot(
         settings.telegram_bot_token,
@@ -77,7 +77,7 @@ async def main() -> None:
     dp["practice"] = practice
     dp["lesson_service"] = lessons
     dp["diagnostic_service"] = diagnostic
-    dp["profile_service"] = profile
+    dp["profile_service"] = profile_service
     dp["stt"] = stt
     dp["tts"] = tts
     dp["settings"] = settings

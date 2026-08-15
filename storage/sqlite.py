@@ -7,6 +7,7 @@
 - lesson_sessions: состояние структурированных уроков
 - diagnostic_sessions: состояние диагностики уровня (Фаза 3)
 - user_profiles: память пользователя (Фаза 4): цели, интересы, слабые места
+- lesson_notes: итоги уроков (Фаза 5): слова, грамматика, ошибки, рекомендация
 """
 
 from __future__ import annotations
@@ -16,7 +17,15 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
-from .repo import DiagnosticSession, LessonSession, Repository, Stats, UserProfile, UserRow
+from .repo import (
+    DiagnosticSession,
+    LessonNote,
+    LessonSession,
+    Repository,
+    Stats,
+    UserProfile,
+    UserRow,
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -75,6 +84,21 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     notes TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS lesson_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    lesson_id INTEGER NOT NULL REFERENCES lesson_sessions(id),
+    topic TEXT NOT NULL DEFAULT '',
+    vocabulary TEXT NOT NULL DEFAULT '',
+    grammar TEXT NOT NULL DEFAULT '',
+    speaking TEXT NOT NULL DEFAULT '',
+    mistakes TEXT NOT NULL DEFAULT '',
+    recommendation TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lesson_notes_user ON lesson_notes(user_id, id);
 """
 
 
@@ -101,6 +125,11 @@ class SQLiteRepository(Repository):
         columns = {row["name"] for row in rows}
         if "level" not in columns:
             await self._conn.execute("ALTER TABLE users ADD COLUMN level TEXT")
+
+        cursor = await self._conn.execute("PRAGMA table_info(messages)")
+        columns = {row["name"] for row in await cursor.fetchall()}
+        if "lesson_id" not in columns:
+            await self._conn.execute("ALTER TABLE messages ADD COLUMN lesson_id INTEGER")
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -201,12 +230,13 @@ class SQLiteRepository(Repository):
         is_correct: bool | None = None,
         issues_json: str = "",
         corrected_text: str = "",
+        lesson_id: int | None = None,
     ) -> None:
         conn = self._require_conn()
         await conn.execute(
-            "INSERT INTO messages (user_id, role, content, is_correct, issues_json, corrected_text, created_at) "
-            "VALUES (?, 'user', ?, ?, ?, ?, ?)",
-            (user_id, content, is_correct, issues_json, corrected_text, _now()),
+            "INSERT INTO messages (user_id, role, content, is_correct, issues_json, corrected_text, lesson_id, created_at) "
+            "VALUES (?, 'user', ?, ?, ?, ?, ?, ?)",
+            (user_id, content, is_correct, issues_json, corrected_text, lesson_id, _now()),
         )
         await conn.commit()
 
@@ -226,6 +256,25 @@ class SQLiteRepository(Repository):
         )
         rows = await cursor.fetchall()
         return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
+
+    async def get_lesson_messages(self, lesson_id: int) -> list[dict]:
+        """Ответы пользователя во время конкретного урока — для итоговой заметки."""
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT content, is_correct, issues_json, corrected_text FROM messages "
+            "WHERE lesson_id = ? AND role = 'user' ORDER BY id ASC",
+            (lesson_id,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "content": row["content"],
+                "is_correct": bool(row["is_correct"]),
+                "issues_json": row["issues_json"] or "",
+                "corrected_text": row["corrected_text"] or "",
+            }
+            for row in rows
+        ]
 
     async def get_stats(self, user_id: int) -> Stats:
         conn = self._require_conn()
@@ -379,6 +428,51 @@ class SQLiteRepository(Repository):
             (_now(), user_id),
         )
         await conn.commit()
+
+    async def add_lesson_note(self, note: LessonNote) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "INSERT INTO lesson_notes "
+            "(user_id, lesson_id, topic, vocabulary, grammar, speaking, mistakes, recommendation, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                note.user_id,
+                note.lesson_id,
+                note.topic,
+                note.vocabulary,
+                note.grammar,
+                note.speaking,
+                note.mistakes,
+                note.recommendation,
+                note.created_at or _now(),
+            ),
+        )
+        await conn.commit()
+        return cursor.lastrowid
+
+    async def get_lesson_notes(self, user_id: int, limit: int = 10) -> list[LessonNote]:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, user_id, lesson_id, topic, vocabulary, grammar, speaking, mistakes, recommendation, created_at "
+            "FROM lesson_notes WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [
+            LessonNote(
+                id=row["id"],
+                user_id=row["user_id"],
+                lesson_id=row["lesson_id"],
+                topic=row["topic"],
+                vocabulary=row["vocabulary"],
+                grammar=row["grammar"],
+                speaking=row["speaking"],
+                mistakes=row["mistakes"],
+                recommendation=row["recommendation"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
 
     # ---------- диагностика уровня (Фаза 3) ----------
 

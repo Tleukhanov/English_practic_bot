@@ -3,6 +3,7 @@ import json
 import pytest
 
 from storage.sqlite import SQLiteRepository
+from storage.repo import LessonNote
 
 
 @pytest.fixture
@@ -161,3 +162,57 @@ async def test_active_lessons_are_per_user(repo):
     await repo.start_lesson(alice.id, "AI", "{}")
     assert await repo.get_active_lesson(bob.id) is None
     assert await repo.get_active_lesson(alice.id) is not None
+
+
+async def test_lesson_messages_linked_and_filtered(repo):
+    user = await repo.get_or_create_user(900)
+    session = await repo.start_lesson(user.id, "Chess", "{}")
+    other = await repo.start_lesson(user.id, "Music", "{}")
+    await repo.finish_active_lessons(user.id)
+
+    await repo.add_user_message(user.id, "I play chess", lesson_id=session.id)
+    await repo.add_user_message(
+        user.id,
+        "I goed to gym",
+        lesson_id=session.id,
+        is_correct=False,
+        corrected_text="I went to the gym.",
+        issues_json='[{"category": "grammar", "problem": "время"}]',
+    )
+    await repo.add_user_message(user.id, "unrelated", lesson_id=other.id)
+
+    messages = await repo.get_lesson_messages(session.id)
+    assert [m["content"] for m in messages] == ["I play chess", "I goed to gym"]
+    assert messages[1]["is_correct"] is False
+    assert messages[1]["corrected_text"] == "I went to the gym."
+    assert "grammar" in messages[1]["issues_json"]
+
+
+async def test_lesson_notes_roundtrip(repo):
+    user = await repo.get_or_create_user(901)
+    session = await repo.start_lesson(user.id, "Cooking", "{}")
+
+    note = LessonNote(
+        user_id=user.id,
+        lesson_id=session.id,
+        topic="Cooking",
+        vocabulary="+5 новых слов",
+        grammar="Present Simple — ок",
+        speaking="улучшение",
+        mistakes="артикли",
+        recommendation="повторить артикли",
+    )
+    note_id = await repo.add_lesson_note(note)
+    assert note_id > 0
+
+    notes = await repo.get_lesson_notes(user.id)
+    assert len(notes) == 1
+    saved = notes[0]
+    assert saved.id == note_id
+    assert saved.lesson_id == session.id
+    assert saved.topic == "Cooking"
+    assert saved.recommendation == "повторить артикли"
+    assert saved.created_at  # дата заполняется
+
+    other = await repo.get_lesson_notes(999999)
+    assert other == []

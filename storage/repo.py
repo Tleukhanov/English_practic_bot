@@ -64,6 +64,22 @@ class DiagnosticSession:
     updated_at: str
 
 
+@dataclass
+class LessonNote:
+    """Структурированный итог урока (Фаза 5), сгенерированный LLM."""
+
+    id: int = 0
+    user_id: int = 0
+    lesson_id: int = 0
+    topic: str = ""
+    vocabulary: str = ""  # +N новых слов, какие использовал
+    grammar: str = ""  # тема и как усвоена
+    speaking: str = ""  # оценка говорения
+    mistakes: str = ""  # повторяющиеся ошибки
+    recommendation: str = ""  # что повторить дальше
+    created_at: str = ""
+
+
 class Repository(ABC):
     @abstractmethod
     async def connect(self) -> None: ...
@@ -95,6 +111,7 @@ class Repository(ABC):
         is_correct: bool | None = None,
         issues_json: str = "",
         corrected_text: str = "",
+        lesson_id: int | None = None,
     ) -> None: ...
 
     @abstractmethod
@@ -102,6 +119,9 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_history(self, user_id: int, limit: int) -> list[dict[str, str]]: ...
+
+    @abstractmethod
+    async def get_lesson_messages(self, lesson_id: int) -> list[dict]: ...
 
     @abstractmethod
     async def get_stats(self, user_id: int) -> Stats: ...
@@ -126,6 +146,12 @@ class Repository(ABC):
 
     @abstractmethod
     async def abort_active_lessons(self, user_id: int) -> None: ...
+
+    @abstractmethod
+    async def add_lesson_note(self, note: LessonNote) -> int: ...
+
+    @abstractmethod
+    async def get_lesson_notes(self, user_id: int, limit: int = 10) -> list[LessonNote]: ...
 
     # ---------- диагностика уровня (Фаза 3) ----------
 
