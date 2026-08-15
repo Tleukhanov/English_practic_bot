@@ -114,6 +114,27 @@ def profile_update_due(
     return (now - updated).total_seconds() >= interval_sec
 
 
+def merge_weak_areas(profile: UserProfile, *parts: str) -> str:
+    """Дополняет profile.weak_areas новыми формулировками, не дублируя.
+
+    Используется после урока: найденные грамматика и ошибки попадают в память
+    пользователя (Фаза 5 -> Фаза 4).
+    """
+    additions = [part.strip() for part in parts if part and part.strip()]
+    if not additions:
+        return profile.weak_areas
+    combined = profile.weak_areas
+    if combined:
+        combined += ", "
+    combined += ", ".join(additions)
+    unique: list[str] = []
+    for item in combined.split(","):
+        item = item.strip()
+        if item and item not in unique:
+            unique.append(item)
+    return ", ".join(unique)
+
+
 class ProfileService:
     """Извлекает и сливает профиль пользователя через LLM."""
 

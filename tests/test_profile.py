@@ -7,6 +7,7 @@ from core.profile import (
     ProfileParseError,
     ProfileService,
     build_extract_prompt,
+    merge_weak_areas,
     parse_profile_update,
     profile_update_due,
     to_profile_snippet,
@@ -81,6 +82,19 @@ def test_profile_update_due():
     stale = UserProfile(user_id=1, updated_at=(now - timedelta(hours=2)).isoformat())
     assert profile_update_due(stale, now=now) is True
     assert profile_update_due(UserProfile(user_id=1, updated_at="garbage"), now=now) is True
+
+
+def test_merge_weak_areas_deduplicates():
+    profile = UserProfile(user_id=1, weak_areas="артикли, порядок слов")
+    assert merge_weak_areas(profile, "Present Perfect") == "артикли, порядок слов, Present Perfect"
+    merged = merge_weak_areas(profile, "артикли", "", "  Present Perfect  ")
+    assert merged == "артикли, порядок слов, Present Perfect"
+
+
+def test_merge_weak_areas_empty():
+    profile = UserProfile(user_id=1)
+    assert merge_weak_areas(profile, "", "  ") == ""
+    assert merge_weak_areas(profile, "  articles  ") == "articles"
 
 
 class FakeLLM(LLMProvider):
