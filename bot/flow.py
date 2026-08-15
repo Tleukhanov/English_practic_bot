@@ -91,10 +91,12 @@ async def run_practice(
     *,
     prefix: str = "",
     profile_service: ProfileService | None = None,
+    lesson_id: int | None = None,
 ) -> PracticeTurn:
     """Проводит практику по переданному тексту, сохраняет в БД и возвращает ответ.
 
     Поднимает исключение при сбое LLM — хэндлер решает, что показать пользователю.
+    lesson_id — сессия урока, к которой относится реплика (для заметок урока, Фаза 5).
     """
     user = await get_or_create_user(message, repo)
     profile = await repo.get_profile(user.id)
@@ -110,6 +112,7 @@ async def run_practice(
         is_correct=result.is_correct,
         issues_json=issues_to_json(result),
         corrected_text=result.corrected_text,
+        lesson_id=lesson_id,
     )
 
     reply = format_practice_soft(result)
@@ -135,6 +138,7 @@ async def answer_practice(
     prefix: str = "",
     reply_markup=None,
     profile_service: ProfileService | None = None,
+    lesson_id: int | None = None,
 ) -> None:
     """Запускает практику и сама отвечает пользователю, обрабатывая ошибки LLM.
 
@@ -149,6 +153,7 @@ async def answer_practice(
             text,
             prefix=prefix,
             profile_service=profile_service,
+            lesson_id=lesson_id,
         )
     except PracticeParseError as exc:
         logger.warning("Не удалось разобрать ответ LLM: %s", exc)
@@ -158,7 +163,7 @@ async def answer_practice(
         logger.exception("Ошибка при обращении к LLM: %s", exc)
         await message.answer(
             "⚠️ Что-то пошло не так при обращении к модели. "
-            "Проверь LLM_API_KEY и LLM_PROVIDER в .env и попробуй ещё раз."
+            "Попробуй ещё раз через пару минут."
         )
         return
     await message.answer(turn.reply, reply_markup=practice_markup(turn.result, reply_markup))

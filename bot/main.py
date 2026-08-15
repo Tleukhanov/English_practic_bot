@@ -15,6 +15,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
 from core.diagnostic import DiagnosticService
+from core.lesson_notes import LessonNoteService
 from core.lessons import LessonService
 from core.practice import PracticeService
 from core.profile import ProfileService
@@ -66,6 +67,7 @@ async def main() -> None:
     lessons = LessonService(llm)
     diagnostic = DiagnosticService(llm)
     profile_service = ProfileService(llm)
+    note_service = LessonNoteService(llm)
 
     bot = Bot(
         settings.telegram_bot_token,
@@ -78,6 +80,7 @@ async def main() -> None:
     dp["lesson_service"] = lessons
     dp["diagnostic_service"] = diagnostic
     dp["profile_service"] = profile_service
+    dp["note_service"] = note_service
     dp["stt"] = stt
     dp["tts"] = tts
     dp["settings"] = settings

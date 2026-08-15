@@ -146,6 +146,7 @@ async def on_voice(
             text,
             prefix=prefix,
             profile_service=profile_service,
+            lesson_id=session.id if session is not None else None,
         )
     except PracticeParseError as exc:
         logger.warning("Не удалось разобрать ответ LLM: %s", exc)
@@ -155,7 +156,7 @@ async def on_voice(
         logger.exception("Ошибка при обращении к LLM: %s", exc)
         await status.edit_text(
             f"{prefix}\n\n⚠️ Что-то пошло не так при обращении к модели. "
-            "Проверь LLM_API_KEY и LLM_PROVIDER в .env и попробуй ещё раз."
+            "Попробуй ещё раз через пару минут."
         )
         return
 

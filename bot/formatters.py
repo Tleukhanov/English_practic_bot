@@ -5,7 +5,7 @@ from __future__ import annotations
 from core.diagnostic import DiagnosticAssessment, DiagnosticTask
 from core.lessons import LESSON_STEPS, LessonContent
 from core.models import PracticeResult
-from storage.repo import Stats, UserProfile
+from storage.repo import LessonNote, Stats, UserProfile
 
 from .utils import escape
 
@@ -132,6 +132,26 @@ def _format_preference(profile: UserProfile) -> str:
     return {"voice": "голосовые тренировки", "text": "текстовые тренировки"}.get(
         profile.preferred_format, ""
     )
+
+
+def format_lesson_note(note: LessonNote) -> str:
+    """Итог урока (Фаза 5): слова, грамматика, говорение, ошибки, рекомендация."""
+    rows = [
+        ("🆕 Слова", note.vocabulary),
+        ("📐 Грамматика", note.grammar),
+        ("🗣️ Говорение", note.speaking),
+        ("❌ Ошибки", note.mistakes),
+        ("💡 Рекомендация", note.recommendation),
+    ]
+    lines = [_bold("📝 Итог урока"), ""]
+    filled = False
+    for label, value in rows:
+        if value:
+            lines.append(f"{label}: {escape(value)}")
+            filled = True
+    if not filled:
+        lines.append("<i>Пока нет данных — ответь на пару фраз во время урока.</i>")
+    return "\n".join(lines)
 
 
 def format_stats(stats: Stats, html: bool = True, level: str | None = None) -> str:

@@ -49,7 +49,7 @@ async def on_text(
     if session is not None:
         await answer_practice(
             message, repo, practice, settings, text,
-            reply_markup=lesson_keyboard(), profile_service=profile_service,
+            reply_markup=lesson_keyboard(), profile_service=profile_service, lesson_id=session.id,
         )
         return
 
