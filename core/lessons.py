@@ -95,7 +95,11 @@ LEVEL_RULES = {
 }
 
 
-def _render_system_prompt(level: str | None, profile: str | None = None) -> str:
+def _render_system_prompt(
+    level: str | None,
+    profile: str | None = None,
+    recent_topics: list[str] | None = None,
+) -> str:
     text = SYSTEM_PROMPT_TEMPLATE.replace(
         "__LEVEL_DESC__", LEVEL_DESCRIPTIONS.get(level, LEVEL_DESCRIPTIONS[None])
     ).replace(
@@ -107,6 +111,12 @@ def _render_system_prompt(level: str | None, profile: str | None = None) -> str:
             "If the student has interests, prefer a lesson around one of them "
             "(pick the most engaging topic). Address their weak areas in the grammar point."
         )
+    if recent_topics:
+        topics_str = ", ".join(f'"{t}"' for t in recent_topics)
+        text += (
+            f"\n\nRecent lesson topics (DO NOT repeat any of them): {topics_str}.\n"
+            "Pick a DIFFERENT, fresh topic."
+        )
     return text
 
 
@@ -114,10 +124,11 @@ def build_lesson_prompt(
     topic: str | None,
     level: str | None = None,
     profile: str | None = None,
+    recent_topics: list[str] | None = None,
 ) -> list[dict[str, str]]:
     user_message = f"Create a structured lesson. Topic: {topic}" if topic else "Create a structured lesson on an interesting topic of your choice."
     return [
-        {"role": "system", "content": _render_system_prompt(level, profile)},
+        {"role": "system", "content": _render_system_prompt(level, profile, recent_topics)},
         {"role": "user", "content": user_message},
     ]
 
@@ -191,7 +202,8 @@ class LessonService:
         topic: str | None = None,
         level: str | None = None,
         profile: str | None = None,
+        recent_topics: list[str] | None = None,
     ) -> LessonContent:
-        messages = build_lesson_prompt(topic, level=level, profile=profile)
+        messages = build_lesson_prompt(topic, level=level, profile=profile, recent_topics=recent_topics)
         raw = await self._llm.chat(messages, temperature=0.7)
         return parse_lesson_response(raw)

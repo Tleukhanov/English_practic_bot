@@ -148,3 +148,32 @@ def test_next_position_tasks_sequence():
 def test_next_position_last_step_finishes():
     assert LESSON_STEPS[5] == "recap"
     assert next_lesson_position(5, 0, 0) == (6, 0, True)
+
+
+def test_build_prompt_with_recent_topics():
+    messages = build_lesson_prompt(
+        None,
+        recent_topics=["Daily Routine", "Cooking", "Travelling"],
+    )
+    system = messages[0]["content"]
+    assert "Daily Routine" in system
+    assert "DO NOT repeat" in system
+    assert "DIFFERENT" in system
+
+
+def test_build_prompt_without_recent_topics():
+    messages = build_lesson_prompt(None)
+    system = messages[0]["content"]
+    assert "DO NOT repeat" not in system
+
+
+def test_build_prompt_profile_and_recent_topics():
+    messages = build_lesson_prompt(
+        None,
+        profile="Student profile: Weak areas: Present Perfect.",
+        recent_topics=["Daily Routine", "Cooking"],
+    )
+    system = messages[0]["content"]
+    assert "Weak areas: Present Perfect" in system
+    assert "Daily Routine" in system
+    assert "DO NOT repeat" in system
