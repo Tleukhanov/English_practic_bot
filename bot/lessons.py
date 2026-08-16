@@ -117,8 +117,13 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
     status = await target.answer("⏳ Составляю структурированный урок...")
     try:
         profile = await repo.get_profile(user.id)
+        recent_notes = await repo.get_lesson_notes(user.id, limit=10)
+        recent_topics = list(reversed([n.topic for n in recent_notes])) if recent_notes else None
         content = await lesson_service.generate(
-            topic, level=user.level, profile=to_profile_snippet(profile) or None
+            topic,
+            level=user.level,
+            profile=to_profile_snippet(profile) or None,
+            recent_topics=recent_topics,
         )
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)
