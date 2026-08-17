@@ -12,11 +12,30 @@ from dataclasses import asdict, dataclass, field
 
 from providers.base import LLMProvider
 
-from .json_utils import extract_json, JsonParseError
+from .json_utils import extract_json, extract_json_list, JsonParseError
 
 LessonParseError = JsonParseError
 
 LESSON_STEPS = ["intro", "vocabulary", "slides", "grammar", "tasks", "recap"]
+
+TOPIC_PROPOSALS_SYSTEM_PROMPT = """You are an English teacher choosing lesson topics for a Russian-speaking student.
+
+Generate exactly 3 interesting, distinct topics. Each topic has a short English name and a 1-sentence Russian description of why it is interesting and what the student will learn.
+
+Respond ONLY with a single valid JSON array. No markdown, no extra text, no code fences.
+
+JSON schema:
+[
+  {"topic": "English topic name", "description": "Russian description of the topic"},
+  {"topic": "...", "description": "..."},
+  {"topic": "...", "description": "..."}
+]
+
+Rules:
+- topics must be different from each other
+- topics should be engaging and practical (not academic or boring)
+- descriptions must be in RUSSIAN, 1 sentence, explain what the student will learn
+"""
 
 
 @dataclass
@@ -191,6 +210,33 @@ def lesson_content_from_json(raw: str) -> LessonContent:
     )
 
 
+def parse_proposals_response(raw: str) -> list[dict[str, str]]:
+    """Разбирает JSON-ответ LLM со списком предложений тем."""
+    payload = extract_json_list(raw)
+    proposals: list[dict[str, str]] = []
+    for item in payload:
+        if isinstance(item, dict):
+            topic = str(item.get("topic", "")).strip()
+            description = str(item.get("description", "")).strip()
+            if topic:
+                proposals.append({"topic": topic, "description": description})
+    return proposals[:3]
+
+
+def _render_proposals_prompt(level: str | None = None, profile: str | None = None, recent_topics: list[str] | None = None) -> str:
+    parts = [TOPIC_PROPOSALS_SYSTEM_PROMPT]
+    extras: list[str] = []
+    if level:
+        extras.append(f"Student level: {level}.")
+    if profile:
+        extras.append(profile)
+    if recent_topics:
+        extras.append("Avoid these recent topics: " + ", ".join(recent_topics) + ".")
+    if extras:
+        parts.append("\n" + " ".join(extras))
+    return "\n".join(parts)
+
+
 class LessonService:
     """Генерация структурированного урока через LLM."""
 
@@ -207,3 +253,18 @@ class LessonService:
         messages = build_lesson_prompt(topic, level=level, profile=profile, recent_topics=recent_topics)
         raw = await self._llm.chat(messages, temperature=0.7)
         return parse_lesson_response(raw)
+
+    async def generate_proposals(
+        self,
+        level: str | None = None,
+        profile: str | None = None,
+        recent_topics: list[str] | None = None,
+    ) -> list[dict[str, str]]:
+        """Генерирует 3 предложения тем для урока (Фаза 2)."""
+        system = _render_proposals_prompt(level=level, profile=profile, recent_topics=recent_topics)
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": "Choose 3 interesting lesson topics."},
+        ]
+        raw = await self._llm.chat(messages, temperature=0.8)
+        return parse_proposals_response(raw)

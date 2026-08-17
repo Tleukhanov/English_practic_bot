@@ -8,6 +8,7 @@ from core.lessons import (
     lesson_content_from_json,
     lesson_content_to_json,
     parse_lesson_response,
+    parse_proposals_response,
 )
 from core.practice import PracticeParseError, parse_practice_response
 from providers.base import LLMProvider
@@ -177,3 +178,33 @@ def test_build_prompt_profile_and_recent_topics():
     assert "Weak areas: Present Perfect" in system
     assert "Daily Routine" in system
     assert "DO NOT repeat" in system
+
+
+def test_parse_proposals_response():
+    raw = '[{"topic": "Cooking", "description": "Learn food vocabulary"}, {"topic": "Travel", "description": "Explore travel phrases"}, {"topic": "Sports", "description": "Sports vocabulary"}]'
+    proposals = parse_proposals_response(raw)
+    assert len(proposals) == 3
+    assert proposals[0]["topic"] == "Cooking"
+    assert proposals[1]["description"] == "Explore travel phrases"
+
+
+def test_parse_proposals_response_with_markdown():
+    raw = '```json\n[{"topic": "Chess", "description": "Шахматы на английском"}, {"topic": "Music", "description": "Музыкальная лексика"}]\n```'
+    proposals = parse_proposals_response(raw)
+    assert len(proposals) == 2
+    assert proposals[0]["topic"] == "Chess"
+
+
+def test_parse_proposals_response_invalid():
+    with pytest.raises(LessonParseError):
+        parse_proposals_response("not json")
+
+
+async def test_lesson_service_generate_proposals():
+    response = '[{"topic": "AI", "description": "Обсудим будущее ИИ"}, {"topic": "Cooking", "description": "Кулинарная лексика"}, {"topic": "Space", "description": "Космос и звёзды"}]'
+    llm = FakeLLM(response)
+    service = LessonService(llm)
+    proposals = await service.generate_proposals(level="B1")
+    assert len(proposals) == 3
+    assert proposals[0]["topic"] == "AI"
+    assert llm.last_temperature == 0.8
