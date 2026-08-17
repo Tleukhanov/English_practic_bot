@@ -80,6 +80,17 @@ class LessonNote:
     created_at: str = ""
 
 
+@dataclass
+class TopicProposal:
+    """Предложение темы для урока (Фаза 2). Временная запись до выбора пользователя."""
+
+    id: int = 0
+    user_id: int = 0
+    topic: str = ""
+    description: str = ""
+    created_at: str = ""
+
+
 class Repository(ABC):
     @abstractmethod
     async def connect(self) -> None: ...
@@ -169,3 +180,14 @@ class Repository(ABC):
 
     @abstractmethod
     async def abort_active_diagnostics(self, user_id: int) -> None: ...
+
+    # ---------- предложения тем (Фаза 2) ----------
+
+    @abstractmethod
+    async def save_topic_proposals(self, user_id: int, proposals: list[TopicProposal]) -> None: ...
+
+    @abstractmethod
+    async def get_topic_proposal(self, proposal_id: int) -> TopicProposal | None: ...
+
+    @abstractmethod
+    async def delete_topic_proposals(self, user_id: int) -> None: ...

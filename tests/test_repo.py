@@ -3,7 +3,7 @@ import json
 import pytest
 
 from storage.sqlite import SQLiteRepository
-from storage.repo import LessonNote
+from storage.repo import LessonNote, TopicProposal
 
 
 @pytest.fixture
@@ -216,3 +216,38 @@ async def test_lesson_notes_roundtrip(repo):
 
     other = await repo.get_lesson_notes(999999)
     assert other == []
+
+
+async def test_topic_proposals_save_and_get(repo):
+    user = await repo.get_or_create_user(100)
+    proposals = [
+        TopicProposal(topic="Cooking", description="Learn food vocabulary"),
+        TopicProposal(topic="Travel", description="Explore travel phrases"),
+        TopicProposal(topic="Sports", description="Sports vocabulary"),
+    ]
+    await repo.save_topic_proposals(user.id, proposals)
+
+    first = await repo.get_topic_proposal(1)
+    assert first is not None
+    assert first.topic == "Cooking"
+    assert first.user_id == user.id
+
+    third = await repo.get_topic_proposal(3)
+    assert third.topic == "Sports"
+
+    assert await repo.get_topic_proposal(999) is None
+
+
+async def test_topic_proposals_replaces_on_resave(repo):
+    user = await repo.get_or_create_user(200)
+    await repo.save_topic_proposals(user.id, [
+        TopicProposal(topic="A", description="a"),
+        TopicProposal(topic="B", description="b"),
+    ])
+    assert len(await repo.get_topic_proposals(user.id)) == 2
+    await repo.save_topic_proposals(user.id, [
+        TopicProposal(topic="C", description="c"),
+    ])
+    all_notes = await repo.get_topic_proposals(user.id)
+    assert len(all_notes) == 1
+    assert all_notes[0].topic == "C"

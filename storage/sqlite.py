@@ -23,6 +23,7 @@ from .repo import (
     LessonSession,
     Repository,
     Stats,
+    TopicProposal,
     UserProfile,
     UserRow,
 )
@@ -99,6 +100,16 @@ CREATE TABLE IF NOT EXISTS lesson_notes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_lesson_notes_user ON lesson_notes(user_id, id);
+
+CREATE TABLE IF NOT EXISTS topic_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    topic TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_topic_proposals_user ON topic_proposals(user_id, id);
 """
 
 
@@ -559,4 +570,55 @@ class SQLiteRepository(Repository):
             "WHERE user_id = ? AND status = 'active'",
             (_now(), user_id),
         )
+        await conn.commit()
+
+    # ---------- предложения тем (Фаза 2) ----------
+
+    async def save_topic_proposals(self, user_id: int, proposals: list[TopicProposal]) -> None:
+        conn = self._require_conn()
+        await conn.execute("DELETE FROM topic_proposals WHERE user_id = ?", (user_id,))
+        for p in proposals:
+            await conn.execute(
+                "INSERT INTO topic_proposals (user_id, topic, description, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, p.topic, p.description, p.created_at or _now()),
+            )
+        await conn.commit()
+
+    async def get_topic_proposal(self, proposal_id: int) -> TopicProposal | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, user_id, topic, description, created_at FROM topic_proposals WHERE id = ?",
+            (proposal_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return TopicProposal(
+            id=row["id"],
+            user_id=row["user_id"],
+            topic=row["topic"],
+            description=row["description"],
+            created_at=row["created_at"],
+        )
+
+    async def get_topic_proposals(self, user_id: int) -> list[TopicProposal]:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, user_id, topic, description, created_at FROM topic_proposals WHERE user_id = ? ORDER BY id",
+            (user_id,),
+        )
+        return [
+            TopicProposal(
+                id=row["id"],
+                user_id=row["user_id"],
+                topic=row["topic"],
+                description=row["description"],
+                created_at=row["created_at"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def delete_topic_proposals(self, user_id: int) -> None:
+        conn = self._require_conn()
+        await conn.execute("DELETE FROM topic_proposals WHERE user_id = ?", (user_id,))
         await conn.commit()
