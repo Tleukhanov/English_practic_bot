@@ -49,3 +49,14 @@ def reveal_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🔍 Показать ошибку", callback_data="practice:reveal")],
         ]
     )
+
+
+def topic_proposals_keyboard(proposals: list[dict]) -> InlineKeyboardMarkup:
+    """Кнопки выбора темы из предложений (Фаза 2)."""
+    buttons = []
+    for i, p in enumerate(proposals):
+        topic = p["topic"]
+        desc = p["description"]
+        label = f"📚 {topic} — {desc}" if desc else f"📚 {topic}"
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"lesson:select_topic:{i}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

@@ -25,7 +25,7 @@ from core.profile import merge_weak_areas, to_profile_snippet
 from storage.repo import LessonNote, Repository
 
 from .formatters import format_lesson_note, format_lesson_step
-from .keyboards import lesson_keyboard, main_menu
+from .keyboards import lesson_keyboard, main_menu, topic_proposals_keyboard
 from .utils import escape
 
 router = Router()
@@ -119,6 +119,28 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
         profile = await repo.get_profile(user.id)
         recent_notes = await repo.get_lesson_notes(user.id, limit=10)
         recent_topics = list(reversed([n.topic for n in recent_notes])) if recent_notes else None
+
+        if topic is None:
+            proposals = await lesson_service.generate_proposals(
+                level=user.level,
+                profile=to_profile_snippet(profile) or None,
+                recent_topics=recent_topics,
+            )
+            if not proposals:
+                await status.edit_text("⚠️ Не удалось подобрать темы. Попробуй снова: /lesson")
+                return
+            await repo.save_topic_proposals(
+                user.id,
+                [TopicProposal(topic=p["topic"], description=p["description"]) for p in proposals],
+            )
+            kb = topic_proposals_keyboard(proposals)
+            await status.edit_text(
+                "📚 Выбери тему для урока:\n\n"
+                + "\n".join(f"* {p['topic']} — {p['description']}" for p in proposals),
+                reply_markup=kb,
+            )
+            return
+
         content = await lesson_service.generate(
             topic,
             level=user.level,
@@ -127,7 +149,7 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
         )
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)
-        await status.edit_text("⚠️ Не удалось составить урок. Проверь LLM_API_KEY в .env и попробуй ещё раз.")
+        await status.edit_text("⚠️ Не удалось составить урок. Попробуй ещё раз: /lesson")
         return
 
     session = await repo.start_lesson(user.id, content.topic, lesson_content_to_json(content))
@@ -142,6 +164,50 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
 async def cmd_lesson(message: Message, repo: Repository, lesson_service: LessonService) -> None:
     topic = message.text.removeprefix("/lesson").strip() or None
     await _start_lesson(message, repo, lesson_service, topic, message.from_user)
+
+
+@router.callback_query(F.data.startswith("lesson:select_topic:"))
+async def cb_select_topic(
+    callback: CallbackQuery,
+    repo: Repository,
+    lesson_service: LessonService,
+) -> None:
+    user = await repo.get_or_create_user(
+        callback.from_user.id,
+        username=callback.from_user.username,
+        first_name=callback.from_user.first_name,
+    )
+    idx = int(callback.data.split(":")[-1])
+    proposals = await repo.get_topic_proposals(user.id)
+    if idx >= len(proposals):
+        await callback.answer("Предложение устарело, начни заново: /lesson")
+        return
+    selected = proposals[idx]
+    await callback.answer()
+    await repo.delete_topic_proposals(user.id)
+
+    status = await callback.message.answer("⏳ Составляю урок...")
+    try:
+        profile = await repo.get_profile(user.id)
+        recent_notes = await repo.get_lesson_notes(user.id, limit=10)
+        recent_topics = list(reversed([n.topic for n in recent_notes])) if recent_notes else None
+        content = await lesson_service.generate(
+            selected.topic,
+            level=user.level,
+            profile=to_profile_snippet(profile) or None,
+            recent_topics=recent_topics,
+        )
+    except Exception as exc:
+        logger.exception("Ошибка генерации урока: %s", exc)
+        await status.edit_text("⚠️ Не удалось составить урок. Попробуй снова: /lesson")
+        return
+
+    session = await repo.start_lesson(user.id, content.topic, lesson_content_to_json(content))
+    intro = format_lesson_step("intro", content)
+    if user.level is None:
+        intro = "🎯 Совет: пройди /diagnostic — тогда уроки будут точно под твой уровень.\n\n" + intro
+    await status.edit_text(intro, reply_markup=lesson_keyboard())
+    logger.info("Урок начат: user=%s topic=%s session=%s level=%s", user.id, content.topic, session.id, user.level)
 
 
 @router.callback_query(F.data == "lesson_start")
