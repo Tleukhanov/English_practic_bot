@@ -142,6 +142,11 @@ class SQLiteRepository(Repository):
         if "lesson_id" not in columns:
             await self._conn.execute("ALTER TABLE messages ADD COLUMN lesson_id INTEGER")
 
+        cursor = await self._conn.execute("PRAGMA table_info(user_profiles)")
+        columns = {row["name"] for row in await cursor.fetchall()}
+        if "character" not in columns:
+            await self._conn.execute("ALTER TABLE user_profiles ADD COLUMN character TEXT NOT NULL DEFAULT ''")
+
     async def close(self) -> None:
         if self._conn is not None:
             await self._conn.close()
@@ -194,7 +199,7 @@ class SQLiteRepository(Repository):
     async def get_profile(self, user_id: int) -> UserProfile | None:
         conn = self._require_conn()
         cursor = await conn.execute(
-            "SELECT user_id, goal, interests, weak_areas, preferred_format, notes, updated_at "
+            "SELECT user_id, goal, interests, weak_areas, preferred_format, notes, character, updated_at "
             "FROM user_profiles WHERE user_id = ?",
             (user_id,),
         )
@@ -208,6 +213,7 @@ class SQLiteRepository(Repository):
             weak_areas=row["weak_areas"],
             preferred_format=row["preferred_format"],
             notes=row["notes"],
+            character=row["character"],
             updated_at=row["updated_at"],
         )
 
@@ -215,11 +221,12 @@ class SQLiteRepository(Repository):
         conn = self._require_conn()
         await conn.execute(
             "INSERT INTO user_profiles "
-            "(user_id, goal, interests, weak_areas, preferred_format, notes, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "(user_id, goal, interests, weak_areas, preferred_format, notes, character, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_id) DO UPDATE SET "
             "goal = excluded.goal, interests = excluded.interests, weak_areas = excluded.weak_areas, "
             "preferred_format = excluded.preferred_format, notes = excluded.notes, "
+            "character = excluded.character, "
             "updated_at = excluded.updated_at",
             (
                 profile.user_id,
@@ -228,6 +235,7 @@ class SQLiteRepository(Repository):
                 profile.weak_areas,
                 profile.preferred_format,
                 profile.notes,
+                profile.character,
                 profile.updated_at,
             ),
         )

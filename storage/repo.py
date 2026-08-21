@@ -29,6 +29,7 @@ class UserProfile:
     weak_areas: str = ""  # повторяющиеся ошибки, через запятую (напр. "Present Perfect, артикли")
     preferred_format: str = ""  # voice | text | ""
     notes: str = ""  # особенности поведения (на русском)
+    character: str = ""  # ID выбранного персонажа (напр. "chill", "toxic") или "" (по умолчанию)
     updated_at: str = ""
 
 
