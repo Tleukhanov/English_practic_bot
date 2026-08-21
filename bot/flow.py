@@ -12,6 +12,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.config import Settings
 from core.models import PracticeResult
+from core.characters import character_prompt
 from core.practice import PracticeParseError, PracticeService
 from core.profile import ProfileService, profile_update_due, to_profile_snippet
 from storage.repo import Repository, UserProfile, UserRow
@@ -101,10 +102,11 @@ async def run_practice(
     user = await get_or_create_user(message, repo)
     profile = await repo.get_profile(user.id)
     snippet = to_profile_snippet(profile) or None
+    char_prompt = character_prompt(profile.character if profile else "")
     history = await repo.get_history(user.id, settings.max_context_messages)
 
     await message.bot.send_chat_action(message.chat.id, action="typing")
-    result = await practice.analyze(text, history, profile=snippet)
+    result = await practice.analyze(text, history, profile=snippet, character_prompt=char_prompt)
 
     await repo.add_user_message(
         user.id,

@@ -14,6 +14,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
+from core.characters import character_prompt
 from core.lesson_notes import LessonNoteService
 from core.lessons import (
     LESSON_STEPS,
@@ -119,6 +120,7 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
         profile = await repo.get_profile(user.id)
         recent_notes = await repo.get_lesson_notes(user.id, limit=10)
         recent_topics = list(reversed([n.topic for n in recent_notes])) if recent_notes else None
+        char_prompt = character_prompt(profile.character if profile else "")
 
         if topic is None:
             proposals = await lesson_service.generate_proposals(
@@ -146,6 +148,7 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
             level=user.level,
             profile=to_profile_snippet(profile) or None,
             recent_topics=recent_topics,
+            character_prompt=char_prompt,
         )
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)
@@ -191,11 +194,13 @@ async def cb_select_topic(
         profile = await repo.get_profile(user.id)
         recent_notes = await repo.get_lesson_notes(user.id, limit=10)
         recent_topics = list(reversed([n.topic for n in recent_notes])) if recent_notes else None
+        char_prompt = character_prompt(profile.character if profile else "")
         content = await lesson_service.generate(
             selected.topic,
             level=user.level,
             profile=to_profile_snippet(profile) or None,
             recent_topics=recent_topics,
+            character_prompt=char_prompt,
         )
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)

@@ -118,6 +118,7 @@ def _render_system_prompt(
     level: str | None,
     profile: str | None = None,
     recent_topics: list[str] | None = None,
+    character_prompt: str = "",
 ) -> str:
     text = SYSTEM_PROMPT_TEMPLATE.replace(
         "__LEVEL_DESC__", LEVEL_DESCRIPTIONS.get(level, LEVEL_DESCRIPTIONS[None])
@@ -136,6 +137,8 @@ def _render_system_prompt(
             f"\n\nRecent lesson topics (DO NOT repeat any of them): {topics_str}.\n"
             "Pick a DIFFERENT, fresh topic."
         )
+    if character_prompt:
+        text += f"\n\n{character_prompt}"
     return text
 
 
@@ -144,10 +147,11 @@ def build_lesson_prompt(
     level: str | None = None,
     profile: str | None = None,
     recent_topics: list[str] | None = None,
+    character_prompt: str = "",
 ) -> list[dict[str, str]]:
     user_message = f"Create a structured lesson. Topic: {topic}" if topic else "Create a structured lesson on an interesting topic of your choice."
     return [
-        {"role": "system", "content": _render_system_prompt(level, profile, recent_topics)},
+        {"role": "system", "content": _render_system_prompt(level, profile, recent_topics, character_prompt)},
         {"role": "user", "content": user_message},
     ]
 
@@ -249,8 +253,9 @@ class LessonService:
         level: str | None = None,
         profile: str | None = None,
         recent_topics: list[str] | None = None,
+        character_prompt: str = "",
     ) -> LessonContent:
-        messages = build_lesson_prompt(topic, level=level, profile=profile, recent_topics=recent_topics)
+        messages = build_lesson_prompt(topic, level=level, profile=profile, recent_topics=recent_topics, character_prompt=character_prompt)
         raw = await self._llm.chat(messages, temperature=0.7)
         return parse_lesson_response(raw)
 

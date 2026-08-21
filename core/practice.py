@@ -54,11 +54,12 @@ def build_prompt(
     history: list[dict[str, str]],
     max_history: int = 6,
     profile: str | None = None,
+    character_prompt: str = "",
 ) -> list[dict[str, str]]:
     """Собирает сообщения для LLM: системный промпт + недавняя история + текущая реплика.
 
-    profile — сниппет из памяти пользователя (Фаза 4), добавляется в системный
-    промпт, чтобы диалог учитывал интересы, цель и слабые места студента.
+    profile — сниппет из памяти пользователя (Фаза 4).
+    character_prompt — инструкции персонажа (Фаза 8), определяют тон общения.
     """
     system = SYSTEM_PROMPT
     if profile:
@@ -67,6 +68,8 @@ def build_prompt(
             "Tailor follow-up questions and examples to the student's interests, "
             "level and weak areas when possible."
         )
+    if character_prompt:
+        system += f"\n\n{character_prompt}"
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     for item in history[-max_history:]:
         if item.get("role") in {"user", "assistant"} and item.get("content"):
@@ -115,7 +118,8 @@ class PracticeService:
         text: str,
         history: list[dict[str, str]],
         profile: str | None = None,
+        character_prompt: str = "",
     ) -> PracticeResult:
-        messages = build_prompt(text, history, max_history=self._max_history, profile=profile)
+        messages = build_prompt(text, history, max_history=self._max_history, profile=profile, character_prompt=character_prompt)
         raw = await self._llm.chat(messages)
         return parse_practice_response(raw)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.characters import get_character
 from core.diagnostic import DiagnosticAssessment, DiagnosticTask
 from core.lessons import LESSON_STEPS, LessonContent
 from core.models import PracticeResult
@@ -112,6 +113,7 @@ def format_profile(profile: UserProfile | None, level: str | None) -> str:
         ("🎯 Цель", profile.goal if profile else "", "расскажи, зачем учишь английский"),
         ("💡 Интересы", profile.interests if profile else "", "пиши о любимых темах — сделаю уроки вокруг них"),
         ("⚠️ Слабые места", profile.weak_areas if profile else "", "пока не накопил данных"),
+        ("🎭 Персонаж", _format_character(profile) if profile else "", "выбери: /character"),
         ("🎤 Формат", _format_preference(profile) if profile else "", "предпочитаешь голос или текст?"),
         ("📌 Заметка", profile.notes if profile else "", "—"),
     ]
@@ -132,6 +134,13 @@ def _format_preference(profile: UserProfile) -> str:
     return {"voice": "голосовые тренировки", "text": "текстовые тренировки"}.get(
         profile.preferred_format, ""
     )
+
+
+def _format_character(profile: UserProfile) -> str:
+    if not profile.character:
+        return ""
+    c = get_character(profile.character)
+    return f"{c.emoji} {c.name}"
 
 
 def format_lesson_note(note: LessonNote) -> str:

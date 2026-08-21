@@ -26,6 +26,7 @@ from .config import get_settings
 from .diagnostic import router as diagnostic_router
 from .flow import router as practice_router
 from .handlers import menu, profile, start, text, voice
+from .handlers.character import router as character_router
 from .lessons import router as lessons_router
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 COMMANDS = [
     BotCommand(command="start", description="Начать практику"),
     BotCommand(command="lesson", description="Структурированный урок"),
+    BotCommand(command="character", description="🎭 Выбрать персонажа"),
     BotCommand(command="diagnostic", description="🎯 Определить уровень"),
     BotCommand(command="stats", description="Моя статистика"),
     BotCommand(command="profile", description="🧠 Мой профиль"),
@@ -87,6 +89,7 @@ async def main() -> None:
 
     dp.include_router(start.router)
     dp.include_router(menu.router)
+    dp.include_router(character_router)
     dp.include_router(profile.router)
     dp.include_router(practice_router)
     dp.include_router(lessons_router)
