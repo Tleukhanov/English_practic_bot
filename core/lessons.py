@@ -35,6 +35,7 @@ Rules:
 - topics must be different from each other
 - topics should be engaging and practical (not academic or boring)
 - descriptions must be in RUSSIAN, 1 sentence, explain what the student will learn
+- If the student has interests listed in their profile, at least 2 of 3 topics MUST revolve around those interests. This is critical — the student should feel the lessons are tailored specifically for them.
 """
 
 
