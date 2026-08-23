@@ -70,7 +70,16 @@ def build_prompt(
         )
     if character_prompt:
         system += f"\n\n{character_prompt}"
+
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
+    messages.append({
+        "role": "system",
+        "content": (
+            "CRITICAL FORMAT RULE: Your response MUST be ONLY a valid JSON object. "
+            "No markdown, no text outside JSON, no code fences, no emoji explanations. "
+            "Express your personality through the JSON fields: \"tone\", \"spoken_reply\", \"next_question\"."
+        ),
+    })
     for item in history[-max_history:]:
         if item.get("role") in {"user", "assistant"} and item.get("content"):
             messages.append({"role": item["role"], "content": item["content"]})

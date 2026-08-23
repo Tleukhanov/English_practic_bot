@@ -139,6 +139,10 @@ def _render_system_prompt(
         )
     if character_prompt:
         text += f"\n\n{character_prompt}"
+    text += (
+        "\n\nIMPORTANT: Your ENTIRE response MUST be a single valid JSON object matching the schema above. "
+        "No markdown, no explanations outside JSON, no code fences, no extra text before or after."
+    )
     return text
 
 
@@ -152,6 +156,13 @@ def build_lesson_prompt(
     user_message = f"Create a structured lesson. Topic: {topic}" if topic else "Create a structured lesson on an interesting topic of your choice."
     return [
         {"role": "system", "content": _render_system_prompt(level, profile, recent_topics, character_prompt)},
+        {
+            "role": "system",
+            "content": (
+                "CRITICAL FORMAT RULE: Your response MUST be ONLY a valid JSON object. "
+                "No markdown, no text outside JSON, no code fences."
+            ),
+        },
         {"role": "user", "content": user_message},
     ]
 

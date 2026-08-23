@@ -65,12 +65,12 @@ def test_parse_lesson_response_invalid_raises():
 def test_build_prompt_with_topic():
     messages = build_lesson_prompt("Chess")
     assert messages[0]["role"] == "system"
-    assert "Chess" in messages[1]["content"]
+    assert "Chess" in messages[2]["content"]
 
 
 def test_build_prompt_without_topic():
     messages = build_lesson_prompt(None)
-    assert "choice" in messages[1]["content"]
+    assert "choice" in messages[2]["content"]
 
 
 def test_build_prompt_defaults_to_b1_level():
