@@ -29,6 +29,7 @@ from .handlers import menu, profile, start, text, voice
 from .handlers.character import router as character_router
 from .handlers.interests import router as interests_router
 from .handlers.progress import router as progress_router
+from .handlers.achievements import router as achievements_router
 from .lessons import router as lessons_router
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ COMMANDS = [
     BotCommand(command="diagnostic", description="🎯 Определить уровень"),
     BotCommand(command="stats", description="Моя статистика"),
     BotCommand(command="progress", description="📊 Мой прогресс"),
+    BotCommand(command="achievements", description="🎮 Достижения"),
     BotCommand(command="profile", description="🧠 Мой профиль"),
     BotCommand(command="help", description="Помощь"),
 ]
@@ -96,6 +98,7 @@ async def main() -> None:
     dp.include_router(character_router)
     dp.include_router(interests_router)
     dp.include_router(progress_router)
+    dp.include_router(achievements_router)
     dp.include_router(profile.router)
     dp.include_router(practice_router)
     dp.include_router(lessons_router)
