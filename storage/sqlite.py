@@ -630,3 +630,20 @@ class SQLiteRepository(Repository):
         conn = self._require_conn()
         await conn.execute("DELETE FROM topic_proposals WHERE user_id = ?", (user_id,))
         await conn.commit()
+
+    async def get_all_users(self) -> list[UserRow]:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, tg_id, username, first_name, level FROM users"
+        )
+        rows = await cursor.fetchall()
+        return [
+            UserRow(
+                id=row["id"],
+                tg_id=row["tg_id"],
+                username=row["username"],
+                first_name=row["first_name"],
+                level=row["level"],
+            )
+            for row in rows
+        ]

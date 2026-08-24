@@ -165,6 +165,9 @@ class Repository(ABC):
     @abstractmethod
     async def get_lesson_notes(self, user_id: int, limit: int = 10) -> list[LessonNote]: ...
 
+    @abstractmethod
+    async def get_all_users(self) -> list[UserRow]: ...
+
     # ---------- диагностика уровня (Фаза 3) ----------
 
     @abstractmethod

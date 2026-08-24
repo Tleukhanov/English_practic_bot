@@ -105,9 +105,15 @@ async def main() -> None:
 
     await bot.set_my_commands(COMMANDS)
 
+    from core.scheduler import setup_scheduler
+    scheduler = setup_scheduler(bot, repo, interval_hours=24)
+    scheduler.start()
+    logger.info("Scheduler started: reminders every %d hours", 24)
+
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        scheduler.shutdown(wait=False)
         await repo.close()
         await bot.session.close()
 
