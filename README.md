@@ -135,4 +135,5 @@ pytest
 - [x] **Фаза 9** — удержание: персонализированное приветствие + streak + weak areas (сделано)
 - [x] **Фаза 10** — прогресс: /progress, XP, streak, weak/strong areas (сделано)
 - [x] **Фаза 11** — напоминания: APScheduler (24ч) + /start retention (сделано)
+- [x] **Фаза 12** — игровые элементы: 15 достижений, 8 уровней, /achievements (сделано)
 - [ ] **Позже** — Telegram Mini App, Web/Mobile, миграция на Postgres (интерфейс `Repository` уже готов)
