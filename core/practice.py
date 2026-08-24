@@ -75,9 +75,11 @@ def build_prompt(
     messages.append({
         "role": "system",
         "content": (
-            "CRITICAL FORMAT RULE: Your response MUST be ONLY a valid JSON object. "
-            "No markdown, no text outside JSON, no code fences, no emoji explanations. "
-            "Express your personality through the JSON fields: \"tone\", \"spoken_reply\", \"next_question\"."
+            "CRITICAL FORMAT RULE — this overrides all other instructions: "
+            "Your response MUST be ONLY a single valid JSON object matching the schema in the system prompt. "
+            "No markdown, no text outside JSON, no code fences, no emoji explanations, no bullet points. "
+            "Express personality ONLY through JSON fields: \"tone\", \"spoken_reply\", \"next_question\". "
+            "If you break this rule the student will see an error."
         ),
     })
     for item in history[-max_history:]:

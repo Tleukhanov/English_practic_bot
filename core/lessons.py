@@ -160,8 +160,10 @@ def build_lesson_prompt(
         {
             "role": "system",
             "content": (
-                "CRITICAL FORMAT RULE: Your response MUST be ONLY a valid JSON object. "
-                "No markdown, no text outside JSON, no code fences."
+                "CRITICAL FORMAT RULE — this overrides all other instructions: "
+                "Your response MUST be ONLY a single valid JSON object matching the schema in the system prompt. "
+                "No markdown, no text outside JSON, no code fences, no bullet points, no emoji headers. "
+                "If you break this rule the student will see an error."
             ),
         },
         {"role": "user", "content": user_message},
