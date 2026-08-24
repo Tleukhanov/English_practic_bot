@@ -134,5 +134,5 @@ pytest
 - [x] **Фаза 8** — AI-персонажи: 6 стилей общения (Chill, Toxic, Strict, British, Toxic Friend) через /character (сделано)
 - [x] **Фаза 9** — удержание: персонализированное приветствие + streak + weak areas (сделано)
 - [x] **Фаза 10** — прогресс: /progress, XP, streak, weak/strong areas (сделано)
-- [ ] **Фазы 11–12** — напоминания, игровые элементы
+- [x] **Фаза 11** — напоминания: APScheduler (24ч) + /start retention (сделано)
 - [ ] **Позже** — Telegram Mini App, Web/Mobile, миграция на Postgres (интерфейс `Repository` уже готов)
