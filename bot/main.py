@@ -43,6 +43,7 @@ COMMANDS = [
     BotCommand(command="stats", description="Моя статистика"),
     BotCommand(command="progress", description="📊 Мой прогресс"),
     BotCommand(command="achievements", description="🎮 Достижения"),
+    BotCommand(command="reset", description="🔄 Сбросить состояние"),
     BotCommand(command="profile", description="🧠 Мой профиль"),
     BotCommand(command="help", description="Помощь"),
 ]

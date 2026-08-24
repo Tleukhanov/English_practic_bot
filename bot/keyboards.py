@@ -12,6 +12,7 @@ def main_menu() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🎯 Определить уровень", callback_data="diagnostic_start")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
             [InlineKeyboardButton(text="🧠 Мой профиль", callback_data="profile")],
+            [InlineKeyboardButton(text="🔄 Сброс", callback_data="reset")],
             [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
         ]
     )
