@@ -44,16 +44,72 @@ HELP_TEXT = """ℹ️ <b>Как пользоваться:</b>
 
 💡 Совет: старайся говорить полными предложениями, так тренировка полезнее."""
 
+RETENTION_COMEBACK = (
+    "👋 С возвращением, {name}!\n\n"
+    "⏰ Ты не занимался уже {hours}ч.\n"
+    "{weak_line}"
+    "{streak_line}\n\n"
+    "Хочешь продолжить?"
+)
+
+RETENTION_NO_WEAK = (
+    "👋 С возвращением, {name}!\n\n"
+    "⏰ Ты не занимался уже {hours}ч.\n"
+    "{streak_line}\n\n"
+    "Готов к новому уроку?"
+)
+
+
+def _build_retention_message(name: str, info) -> str | None:
+    """Формирует персонализированное приветствие на основе retention данных."""
+    if info.total_lessons == 0 or info.last_practice_hours is None:
+        return None
+
+    if info.last_practice_hours < 24:
+        return None
+
+    weak_line = ""
+    if info.weak_areas:
+        weak_line = "📝 Твои слабые темы: " + ", ".join(info.weak_areas[:3]) + ". "
+
+    streak_line = ""
+    if info.streak_days > 1:
+        streak_line = f"🔥 Серия: {info.streak_days} дней подряд!"
+
+    if info.weak_areas:
+        return RETENTION_COMEBACK.format(
+            name=name,
+            hours=info.last_practice_hours,
+            weak_line=weak_line,
+            streak_line=streak_line,
+        )
+    else:
+        return RETENTION_NO_WEAK.format(
+            name=name,
+            hours=info.last_practice_hours,
+            streak_line=streak_line,
+        )
+
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, repo: Repository) -> None:
+    from core.retention import RetentionService
+
     await repo.get_or_create_user(
         message.from_user.id,
         username=message.from_user.username,
         first_name=message.from_user.first_name,
     )
     name = message.from_user.first_name or "друг"
-    await message.answer(WELCOME_TEXT.format(name=name), reply_markup=main_menu())
+
+    retention_service = RetentionService(repo)
+    info = await retention_service.get_retention_info(message.from_user.id)
+    greeting = _build_retention_message(name, info)
+
+    if greeting:
+        await message.answer(greeting, reply_markup=main_menu())
+    else:
+        await message.answer(WELCOME_TEXT.format(name=name), reply_markup=main_menu())
 
 
 @router.message(Command("help"))
