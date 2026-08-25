@@ -23,7 +23,7 @@ from core.lessons import (
     lesson_content_to_json,
 )
 from core.profile import merge_weak_areas, to_profile_snippet
-from storage.repo import LessonNote, Repository
+from storage.repo import LessonNote, Repository, TopicProposal
 
 from .formatters import format_lesson_note, format_lesson_step
 from .keyboards import lesson_keyboard, main_menu, topic_proposals_keyboard
