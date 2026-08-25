@@ -48,7 +48,7 @@ CHARACTERS: list[Character] = [
         name="Toxic Teacher",
         emoji="🔥",
         description="Грубоватый, подкалывает, но учит. Сарказм как мотивация.",
-        voice="en-US-AriaNeural",
+        voice="en-US-DavisNeural",
         prompt_suffix=(
             "You are a MEAN, sarcastic English tutor who ROASTS the student for every mistake. "
             "Your humor is DARK, BITING, and UNFILTERED — think Gordon Ramsay teaching English. "

@@ -139,10 +139,11 @@ def _render_system_prompt(
             "Pick a DIFFERENT, fresh topic."
         )
     if character_prompt:
-        text += f"\n\n[CHARACTER STYLE — apply this personality to your response while keeping the same JSON format: {character_prompt}]"
+        text += f"\n\n[CHARACTER STYLE — act as this character while keeping JSON format: {character_prompt}]"
     text += (
         "\n\nIMPORTANT: Your ENTIRE response MUST be a single valid JSON object matching the schema above. "
-        "No markdown, no explanations outside JSON, no code fences, no extra text before or after."
+        "No markdown, no explanations outside JSON, no code fences, no extra text before or after. "
+        "Apply CHARACTER STYLE to the tone and content of your response."
     )
     return text
 

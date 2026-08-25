@@ -70,25 +70,22 @@ def build_prompt(
         )
 
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
-    messages.append({
-        "role": "system",
-        "content": (
-            "CRITICAL FORMAT RULE — this overrides all other instructions: "
-            "Your response MUST be ONLY a single valid JSON object matching the schema in the system prompt. "
-            "No markdown, no text outside JSON, no code fences, no emoji explanations, no bullet points. "
-            "Express personality ONLY through JSON fields: \"tone\", \"spoken_reply\", \"next_question\". "
-            "If you break this rule the student will see an error."
-        ),
-    })
+
+    format_rule = (
+        "CRITICAL FORMAT RULE — this overrides all other instructions: "
+        "Your response MUST be ONLY a single valid JSON object matching the schema in the system prompt. "
+        "No markdown, no text outside JSON, no code fences, no emoji explanations, no bullet points. "
+        "Express personality ONLY through JSON fields: \"tone\", \"spoken_reply\", \"next_question\". "
+        "If you break this rule the student will see an error."
+    )
+
     if character_prompt:
-        messages.append({
-            "role": "system",
-            "content": (
-                f"CHARACTER STYLE — apply this personality to your JSON response fields "
-                f"(\"tone\", \"spoken_reply\", \"next_question\") while keeping the same JSON format:\n\n"
-                f"{character_prompt}"
-            ),
-        })
+        format_rule += (
+            f"\n\nCHARACTER STYLE — you MUST act as this character when writing "
+            f"\"tone\", \"spoken_reply\", and \"next_question\":\n{character_prompt}"
+        )
+
+    messages.append({"role": "system", "content": format_rule})
     for item in history[-max_history:]:
         if item.get("role") in {"user", "assistant"} and item.get("content"):
             messages.append({"role": item["role"], "content": item["content"]})
