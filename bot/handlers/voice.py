@@ -38,8 +38,9 @@ def _temp_paths(chat_id: int, message_id: int) -> tuple[str, str]:
 
 
 def _spoken_text(result) -> str:
-    """Что бот говорит голосом: естественная реплика диалога, не пересказ пользователя."""
-    return (result.spoken_reply or result.next_question).strip()
+    """Что бот говорит голосом: spoken_reply если есть, иначе next_question."""
+    text = (result.spoken_reply or result.next_question or "").strip()
+    return text
 
 
 def _cleanup(*paths: str) -> None:

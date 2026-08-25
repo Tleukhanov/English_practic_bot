@@ -50,6 +50,10 @@ def format_practice_result(result: PracticeResult, html: bool = True) -> str:
         parts.append("")
         parts.append(f"📝 {_bold('Исправленный вариант:', html)}\n{escape(result.corrected_text)}")
 
+    if result.spoken_reply:
+        parts.append("")
+        parts.append(f"🗣 {escape(result.spoken_reply)}")
+
     if result.next_question:
         parts.append("")
         parts.append(f"💬 {escape(result.next_question)}")
