@@ -42,7 +42,7 @@ class ProgressService:
         stats = await self._repo.get_stats(user_id)
         notes = await self._repo.get_lesson_notes(user_id, limit=20)
 
-        level = profile.level if profile and profile.level else "—"
+        level = ""
         character = profile.character if profile and profile.character else "default"
         interests = profile.interests if profile and profile.interests else ""
 
