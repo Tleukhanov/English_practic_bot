@@ -68,8 +68,6 @@ def build_prompt(
             "Tailor follow-up questions and examples to the student's interests, "
             "level and weak areas when possible."
         )
-    if character_prompt:
-        system += f"\n\n{character_prompt}"
 
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     messages.append({
@@ -82,6 +80,15 @@ def build_prompt(
             "If you break this rule the student will see an error."
         ),
     })
+    if character_prompt:
+        messages.append({
+            "role": "system",
+            "content": (
+                f"CHARACTER STYLE — apply this personality to your JSON response fields "
+                f"(\"tone\", \"spoken_reply\", \"next_question\") while keeping the same JSON format:\n\n"
+                f"{character_prompt}"
+            ),
+        })
     for item in history[-max_history:]:
         if item.get("role") in {"user", "assistant"} and item.get("content"):
             messages.append({"role": item["role"], "content": item["content"]})
