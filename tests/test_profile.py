@@ -102,7 +102,7 @@ class FakeLLM(LLMProvider):
         self._response = response
         self.last_temperature = None
 
-    async def chat(self, messages, temperature=None):
+    async def chat(self, messages, temperature=None, **kwargs):
         self.last_temperature = temperature
         return self._response
 

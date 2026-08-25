@@ -132,5 +132,5 @@ class PracticeService:
         character_prompt: str = "",
     ) -> PracticeResult:
         messages = build_prompt(text, history, max_history=self._max_history, profile=profile, character_prompt=character_prompt)
-        raw = await self._llm.chat(messages)
+        raw = await self._llm.chat(messages, json_mode=True)
         return parse_practice_response(raw)

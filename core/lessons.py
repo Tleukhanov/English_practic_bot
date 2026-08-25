@@ -270,7 +270,7 @@ class LessonService:
         character_prompt: str = "",
     ) -> LessonContent:
         messages = build_lesson_prompt(topic, level=level, profile=profile, recent_topics=recent_topics, character_prompt=character_prompt)
-        raw = await self._llm.chat(messages, temperature=0.7)
+        raw = await self._llm.chat(messages, temperature=0.7, json_mode=True)
         return parse_lesson_response(raw)
 
     async def generate_proposals(
@@ -285,5 +285,5 @@ class LessonService:
             {"role": "system", "content": system},
             {"role": "user", "content": "Choose 3 interesting lesson topics."},
         ]
-        raw = await self._llm.chat(messages, temperature=0.8)
+        raw = await self._llm.chat(messages, temperature=0.8, json_mode=True)
         return parse_proposals_response(raw)

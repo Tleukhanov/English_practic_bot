@@ -9,7 +9,7 @@ class FakeLLM(LLMProvider):
         self._response = response
         self.last_messages: list[dict[str, str]] = []
 
-    async def chat(self, messages, temperature=None):
+    async def chat(self, messages, temperature=None, **kwargs):
         self.last_messages = messages
         return self._response
 

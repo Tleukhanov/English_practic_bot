@@ -11,7 +11,12 @@ class LLMProvider(ABC):
     """Чат-модель. Сообщения — в формате OpenAI: [{"role": "...", "content": "..."}]."""
 
     @abstractmethod
-    async def chat(self, messages: list[dict[str, str]], temperature: float | None = None) -> str:
+    async def chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | None = None,
+        json_mode: bool = False,
+    ) -> str:
         raise NotImplementedError
 
 

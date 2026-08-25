@@ -101,7 +101,7 @@ async def cmd_start(message: Message, repo: Repository) -> None:
         first_name=message.from_user.first_name,
     )
 
-    await repo.abandon_active_sessions(message.from_user.id)
+    await repo.abort_active_lessons(message.from_user.id)
     await repo.abort_active_diagnostics(message.from_user.id)
 
     name = message.from_user.first_name or "друг"
@@ -123,14 +123,14 @@ async def cmd_help(message: Message) -> None:
 
 @router.message(Command("reset"))
 async def cmd_reset(message: Message, repo: Repository) -> None:
-    await repo.abandon_active_sessions(message.from_user.id)
+    await repo.abort_active_lessons(message.from_user.id)
     await repo.abort_active_diagnostics(message.from_user.id)
     await message.answer("🔄 Состояние сброшено. Можешь начать заново!", reply_markup=main_menu())
 
 
 @router.callback_query(F.data == "reset")
 async def cb_reset(callback: CallbackQuery, repo: Repository) -> None:
-    await repo.abandon_active_sessions(callback.from_user.id)
+    await repo.abort_active_lessons(callback.from_user.id)
     await repo.abort_active_diagnostics(callback.from_user.id)
     await callback.answer("🔄 Сброшено")
     await callback.message.answer("🔄 Состояние сброшено. Можешь начать заново!", reply_markup=main_menu())

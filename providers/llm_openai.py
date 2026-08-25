@@ -38,15 +38,23 @@ class OpenAIChatProvider(LLMProvider):
         self._max_retries = retries
         self._backoff = backoff
 
-    async def chat(self, messages: list[dict[str, str]], temperature: float | None = None) -> str:
+    async def chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | None = None,
+        json_mode: bool = False,
+    ) -> str:
         last_error: Exception | None = None
+        kwargs: dict = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": temperature if temperature is not None else self._temperature,
+        }
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
         for attempt in range(self._max_retries + 1):
             try:
-                response = await self._client.chat.completions.create(
-                    model=self._model,
-                    messages=messages,
-                    temperature=temperature if temperature is not None else self._temperature,
-                )
+                response = await self._client.chat.completions.create(**kwargs)
                 content = response.choices[0].message.content
                 return (content or "").strip()
             except _RETRYABLE_ERRORS as exc:
