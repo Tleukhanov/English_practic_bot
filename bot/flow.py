@@ -174,25 +174,36 @@ async def answer_practice(
 @router.callback_query(F.data == "practice:reveal")
 async def cb_practice_reveal(callback: CallbackQuery, repo: Repository) -> None:
     """Кнопка «Показать ошибку»: показывает подробный разбор последней фразы."""
-    user = await repo.get_or_create_user(
-        callback.from_user.id,
-        username=callback.from_user.username,
-        first_name=callback.from_user.first_name,
-    )
-    correction = await repo.get_last_correction(user.id)
-    if not correction:
-        await callback.answer()
-        await callback.message.answer("Не нашёл сохранённых ошибок. Напиши фразу по-английски — проверю и покажу.")
-        return
+    try:
+        user = await repo.get_or_create_user(
+            callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+        )
+        correction = await repo.get_last_correction(user.id)
+        if not correction:
+            try:
+                await callback.answer("Нет ошибок")
+            except Exception:
+                pass
+            return
 
-    issues: list[dict] = []
-    if correction.get("issues_json"):
+        issues: list[dict] = []
+        if correction.get("issues_json"):
+            try:
+                parsed = json.loads(correction["issues_json"])
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                issues = [i for i in parsed if isinstance(i, dict)]
+
         try:
-            parsed = json.loads(correction["issues_json"])
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, list):
-            issues = [i for i in parsed if isinstance(i, dict)]
-
-    await callback.answer()
-    await callback.message.answer(format_reveal(correction.get("corrected_text", ""), issues))
+            await callback.answer()
+        except Exception:
+            pass
+        await callback.message.answer(format_reveal(correction.get("corrected_text", ""), issues))
+    except Exception:
+        try:
+            await callback.answer("Устарело, отправь фразу заново")
+        except Exception:
+            pass
