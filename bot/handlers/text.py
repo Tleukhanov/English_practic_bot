@@ -47,6 +47,18 @@ async def on_text(
 
     session = await repo.get_active_lesson(user.id)
     if session is not None:
+        if session.updated_at:
+            from datetime import datetime, timezone
+            try:
+                updated = datetime.fromisoformat(session.updated_at.replace("Z", "+00:00"))
+                age_hours = (datetime.now(timezone.utc) - updated).total_seconds() / 3600
+                if age_hours > 1:
+                    await repo.abort_active_lessons(user.id)
+                    session = None
+            except (ValueError, TypeError):
+                pass
+
+    if session is not None:
         await answer_practice(
             message, repo, practice, settings, text,
             reply_markup=lesson_keyboard(), profile_service=profile_service, lesson_id=session.id,

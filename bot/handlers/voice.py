@@ -113,6 +113,17 @@ async def on_voice(
         first_name=message.from_user.first_name,
     )
     session = await repo.get_active_lesson(user.id)
+    if session is not None:
+        if session.updated_at:
+            from datetime import datetime, timezone
+            try:
+                updated = datetime.fromisoformat(session.updated_at.replace("Z", "+00:00"))
+                age_hours = (datetime.now(timezone.utc) - updated).total_seconds() / 3600
+                if age_hours > 1:
+                    await repo.abort_active_lessons(user.id)
+                    session = None
+            except (ValueError, TypeError):
+                pass
     reply_markup = lesson_keyboard() if session is not None else None
 
     status = await message.answer("🎧 Слушаю...")
