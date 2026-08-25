@@ -16,6 +16,7 @@ class Character:
     emoji: str
     description: str  # короткое описание для выбора
     prompt_suffix: str  # добавляется в системный промпт
+    voice: str = "en-US-JennyNeural"  # Edge TTS голос
 
 
 CHARACTERS: list[Character] = [
@@ -25,12 +26,14 @@ CHARACTERS: list[Character] = [
         emoji="📚",
         description="Дружелюбный и профессиональный преподаватель",
         prompt_suffix="",
+        voice="en-US-AriaNeural",
     ),
     Character(
         id="chill",
         name="Chill Teacher",
         emoji="😎",
         description="Спокойный, дружелюбный, как друг. Объясняет просто, без давления.",
+        voice="en-US-GuyNeural",
         prompt_suffix=(
             "You are a chill, friendly English tutor. "
             "Your tone is relaxed and encouraging — like a good friend helping out. "
@@ -45,6 +48,7 @@ CHARACTERS: list[Character] = [
         name="Toxic Teacher",
         emoji="🔥",
         description="Грубоватый, подкалывает, но учит. Сарказм как мотивация.",
+        voice="en-US-AriaNeural",
         prompt_suffix=(
             "You are a sharp-tongued, sarcastic English tutor. "
             "You tease the student about mistakes but always correct them properly. "
@@ -60,6 +64,7 @@ CHARACTERS: list[Character] = [
         name="Strict Teacher",
         emoji="🎩",
         description="Серьёзный, требовательный, акцент на грамматику и точность.",
+        voice="en-US-DavisNeural",
         prompt_suffix=(
             "You are a strict, disciplined English tutor. "
             "You demand precision and hold the student to high standards. "
@@ -75,6 +80,7 @@ CHARACTERS: list[Character] = [
         name="British Teacher",
         emoji="🇬🇧",
         description="Британский английский, вежливый, с британским юмором и культурой.",
+        voice="en-GB-SoniaNeural",
         prompt_suffix=(
             "You are a British English tutor. "
             "You speak with proper British English — use British spelling and expressions "
@@ -90,6 +96,7 @@ CHARACTERS: list[Character] = [
         name="Toxic Friend",
         emoji="💀",
         description="Общается как друг из мемов. Смешно, современно, без снисходительности.",
+        voice="en-US-JennyNeural",
         prompt_suffix=(
             "You are the student's English-speaking buddy. "
             "Your style is casual, meme-aware, and modern — like texting a friend. "
@@ -117,3 +124,8 @@ def list_characters() -> list[Character]:
 def character_prompt(character_id: str) -> str:
     """Возвращает prompt_suffix для персонажа (или пустую строку для дефолтного)."""
     return get_character(character_id).prompt_suffix
+
+
+def character_voice(character_id: str) -> str:
+    """Возвращает TTS голос для персонажа."""
+    return get_character(character_id).voice
