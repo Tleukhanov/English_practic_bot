@@ -26,6 +26,7 @@ from .repo import (
     TopicProposal,
     UserProfile,
     UserRow,
+    WeakArea,
 )
 
 _SCHEMA = """
@@ -146,6 +147,19 @@ class SQLiteRepository(Repository):
         columns = {row["name"] for row in await cursor.fetchall()}
         if "character" not in columns:
             await self._conn.execute("ALTER TABLE user_profiles ADD COLUMN character TEXT NOT NULL DEFAULT ''")
+
+        await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_weak_areas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                area TEXT NOT NULL,
+                incorrect_count INTEGER NOT NULL DEFAULT 0,
+                correct_count INTEGER NOT NULL DEFAULT 0,
+                last_seen TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '',
+                UNIQUE(user_id, area)
+            )
+        """)
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -652,6 +666,63 @@ class SQLiteRepository(Repository):
             (user_id, limit),
         )
         return [row["day"] for row in await cursor.fetchall()]
+
+    # ---------- weak areas (Фаза 13) ----------
+
+    async def get_weak_areas(self, user_id: int) -> list[WeakArea]:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, user_id, area, incorrect_count, correct_count, last_seen, created_at "
+            "FROM user_weak_areas WHERE user_id = ? "
+            "ORDER BY (incorrect_count * 2.0 + "
+            "CASE WHEN last_seen != '' THEN "
+            "  MAX(0, 14 - CAST((julianday('now') - julianday(last_seen)) AS INTEGER)) / 14.0 "
+            "ELSE 0 END) DESC",
+            (user_id,),
+        )
+        return [
+            WeakArea(
+                id=row["id"],
+                user_id=row["user_id"],
+                area=row["area"],
+                incorrect_count=row["incorrect_count"],
+                correct_count=row["correct_count"],
+                last_seen=row["last_seen"],
+                created_at=row["created_at"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def upsert_weak_area(
+        self,
+        user_id: int,
+        area: str,
+        incorrect_increment: int = 0,
+        correct_increment: int = 0,
+        last_seen: str = "",
+    ) -> None:
+        conn = self._require_conn()
+        now = last_seen or ""
+        await conn.execute(
+            """
+            INSERT INTO user_weak_areas (user_id, area, incorrect_count, correct_count, last_seen, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, area) DO UPDATE SET
+                incorrect_count = incorrect_count + excluded.incorrect_count,
+                correct_count = correct_count + excluded.correct_count,
+                last_seen = CASE WHEN excluded.last_seen != '' THEN excluded.last_seen ELSE user_weak_areas.last_seen END
+            """,
+            (user_id, area, incorrect_increment, correct_increment, now, now),
+        )
+        await conn.commit()
+
+    async def delete_weak_area(self, user_id: int, area: str) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "DELETE FROM user_weak_areas WHERE user_id = ? AND area = ?",
+            (user_id, area),
+        )
+        await conn.commit()
 
     async def get_all_users(self) -> list[UserRow]:
         conn = self._require_conn()

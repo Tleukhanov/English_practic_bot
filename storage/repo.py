@@ -92,6 +92,19 @@ class TopicProposal:
     created_at: str = ""
 
 
+@dataclass
+class WeakArea:
+    """Слабая область пользователя (Фаза 13)."""
+
+    id: int = 0
+    user_id: int = 0
+    area: str = ""
+    incorrect_count: int = 0
+    correct_count: int = 0
+    last_seen: str = ""
+    created_at: str = ""
+
+
 class Repository(ABC):
     @abstractmethod
     async def connect(self) -> None: ...
@@ -201,3 +214,21 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_practice_dates(self, user_id: int, limit: int = 50) -> list[str]: ...
+
+    # ---------- слабые области (Фаза 13) ----------
+
+    @abstractmethod
+    async def get_weak_areas(self, user_id: int) -> list[WeakArea]: ...
+
+    @abstractmethod
+    async def upsert_weak_area(
+        self,
+        user_id: int,
+        area: str,
+        incorrect_increment: int = 0,
+        correct_increment: int = 0,
+        last_seen: str = "",
+    ) -> None: ...
+
+    @abstractmethod
+    async def delete_weak_area(self, user_id: int, area: str) -> None: ...
