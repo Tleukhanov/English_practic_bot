@@ -70,7 +70,10 @@ async def on_text(
                 pass
 
     if session is not None:
-        kb = lesson_recap_keyboard() if LESSON_STEPS[session.step] == "recap" else lesson_keyboard()
+        try:
+            kb = lesson_recap_keyboard() if LESSON_STEPS[session.step] == "recap" else lesson_keyboard()
+        except (IndexError, ValueError):
+            kb = lesson_keyboard()
         await answer_practice(
             message, repo, practice, settings, text,
             reply_markup=kb, profile_service=profile_service, lesson_id=session.id,

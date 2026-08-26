@@ -130,7 +130,13 @@ async def on_voice(
                     session = None
             except (ValueError, TypeError):
                 pass
-    reply_markup = (lesson_recap_keyboard() if LESSON_STEPS[session.step] == "recap" else lesson_keyboard()) if session is not None else None
+    if session is not None:
+        try:
+            reply_markup = lesson_recap_keyboard() if LESSON_STEPS[session.step] == "recap" else lesson_keyboard()
+        except (IndexError, ValueError):
+            reply_markup = lesson_keyboard()
+    else:
+        reply_markup = None
 
     status = await message.answer("🎧 Слушаю...")
     ogg_path, wav_path = _temp_paths(message.chat.id, message.message_id)
