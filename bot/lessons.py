@@ -269,6 +269,7 @@ async def cb_lesson_next(
 
     new_step, new_task_index, finished = next_lesson_position(session.step, session.task_index, len(content.tasks))
     if finished:
+        await callback.message.bot.send_chat_action(callback.message.chat.id, action="typing")
         note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
         await repo.finish_active_lessons(user.id)
         await _merge_note_into_profile(repo, user.id, content, note)
@@ -319,6 +320,7 @@ async def cb_lesson_end(
     await callback.answer()
 
     content = lesson_content_from_json(session.content_json)
+    await callback.message.bot.send_chat_action(callback.message.chat.id, action="typing")
     note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
     await repo.finish_active_lessons(user.id)
     await _merge_note_into_profile(repo, user.id, content, note)
