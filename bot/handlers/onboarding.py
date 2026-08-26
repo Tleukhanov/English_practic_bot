@@ -83,8 +83,7 @@ def _interests_text() -> str:
 def _done_text() -> str:
     return (
         "🎉 Всё готово!\n\n"
-        "Вот что я знаю о тебе. Теперь давай начнём!\n\n"
-        "Нажми кнопку ниже, чтобы начать первый урок."
+        "Вот что я знаю о тебе. Составляю твой первый урок..."
     )
 
 
@@ -111,7 +110,7 @@ async def cb_onb_interest(callback: CallbackQuery, repo: Repository) -> None:
     code = callback.data.split(":")[-1]
     if code == "done":
         await callback.answer()
-        await callback.message.edit_text(_done_text(), reply_markup=main_menu())
+        await callback.message.edit_text(_done_text())
         from bot.lessons import _start_lesson
         from core.lessons import LessonService
         lesson_service = LessonService(repo)

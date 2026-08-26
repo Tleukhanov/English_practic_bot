@@ -54,6 +54,7 @@ async def _start_review(message: Message, repo: Repository, srs: SRSService, sta
 
     if state:
         await state.set_state(ReviewState.answering)
+        await state.update_data(word_id=words[0].id, total=len(words), reviewed=0)
     first = words[0]
     await message.answer(
         _review_card(first, stats["due"], 0),
@@ -127,11 +128,20 @@ async def on_review_answer(message: Message, repo: Repository, srs: SRSService, 
         username=message.from_user.username,
         first_name=message.from_user.first_name,
     )
-    words = await srs.get_due_words(user.id, limit=10)
-    if not words:
+    data = await state.get_data()
+    word_id = data.get("word_id")
+    total = data.get("total", 0)
+    reviewed = data.get("reviewed", 0)
+
+    if not word_id:
+        await state.clear()
         return
 
-    current = words[0]
+    current = await srs.get_word_by_id(word_id)
+    if not current:
+        await state.clear()
+        return
+
     is_correct = text.lower().strip() == current.word.lower().strip()
     quality = 5 if is_correct else 1
 
@@ -143,21 +153,34 @@ async def on_review_answer(message: Message, repo: Repository, srs: SRSService, 
     remaining = await srs.get_due_words(user.id, limit=10)
     if remaining:
         next_word = remaining[0]
+        await state.update_data(word_id=next_word.id, reviewed=reviewed + 1)
         stats = await srs.get_stats(user.id)
         await message.answer(
-            _review_card(next_word, stats["due"], len(words) - len(remaining)),
+            _review_card(next_word, stats["due"], reviewed + 1),
             reply_markup=_review_cancel_keyboard(),
         )
     else:
         await state.clear()
         await repo.add_user_message(
-            user.id, f"[SRS review: {len(words)} words]",
+            user.id, f"[SRS review: {total} words]",
             is_correct=None,
         )
         final_stats = await srs.get_stats(user.id)
         await message.answer(
             f"🎉 Повторение завершено!\n"
-            f"Повторено: {len(words)} слов\n"
+            f"Повторено: {total} слов\n"
             f"Выучено: {final_stats['learned']}/{final_stats['total']}",
             reply_markup=main_menu(),
         )
+        from core.achievements import check_achievements
+        from core.progress import ProgressService
+        progress_svc = ProgressService(repo)
+        progress = await progress_svc.get_progress(user.id, level=user.level)
+        achievements = check_achievements(progress)
+        earned = [a for a in achievements if a.earned]
+        if earned:
+            ach_text = "\n".join(f"{a.emoji} {a.name}" for a in earned[:3])
+            await message.answer(
+                f"<b>Ваши достижения!</b>\n\n{ach_text}",
+                reply_markup=main_menu(),
+            )

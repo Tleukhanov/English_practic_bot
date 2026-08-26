@@ -52,6 +52,10 @@ class SRSService:
         due.sort(key=lambda w: w.next_review)
         return due[:limit]
 
+    async def get_word_by_id(self, word_id: int) -> SRSWord | None:
+        """Возвращает слово по ID."""
+        return await self._repo.get_srs_word_by_id(word_id)
+
     async def review(self, word_id: int, quality: int) -> SRSWord | None:
         """Обновляет интервал слова по SM-2.
 
