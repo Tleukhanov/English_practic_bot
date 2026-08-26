@@ -86,6 +86,21 @@ async def process_diagnostic_answer(
     if session is None:
         return False
 
+    if session.updated_at:
+        from datetime import datetime, timezone
+        try:
+            updated = datetime.fromisoformat(session.updated_at.replace("Z", "+00:00"))
+            age_hours = (datetime.now(timezone.utc) - updated).total_seconds() / 3600
+            if age_hours > 1:
+                await repo.abort_active_diagnostics(user.id)
+                await message.answer(
+                    "⏰ Диагностика устарела (прошло больше часа) и была завершена.\n"
+                    "Начни заново: /diagnostic",
+                )
+                return True
+        except (ValueError, TypeError):
+            pass
+
     await repo.append_diagnostic_answer(session.id, text)
     questions = diagnostic_tasks_from_json(session.questions_json)
     answers = _answers_of(session)
