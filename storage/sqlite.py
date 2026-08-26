@@ -301,7 +301,7 @@ class SQLiteRepository(Repository):
         cursor = await conn.execute(
             "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END), 0) AS correct, "
             "COALESCE(SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END), 0) AS errors "
-            "FROM messages WHERE user_id = ? AND role = 'user'",
+            "FROM messages WHERE user_id = ? AND role = 'user' AND is_correct IS NOT NULL",
             (user_id,),
         )
         totals = await cursor.fetchone()
