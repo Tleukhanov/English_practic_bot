@@ -104,6 +104,21 @@ class WeakArea:
     last_seen: str = ""
     created_at: str = ""
 
+    @property
+    def priority_score(self) -> float:
+        """Чем выше, тем важнее."""
+        from datetime import datetime, timezone
+        age_days = 999.0
+        if self.last_seen:
+            try:
+                dt = datetime.fromisoformat(self.last_seen.replace("Z", "+00:00"))
+                age_days = (datetime.now(timezone.utc) - dt).total_seconds() / 86400
+            except (ValueError, TypeError):
+                pass
+        recency_bonus = max(0, 14 - age_days) / 14.0
+        error_weight = self.incorrect_count / max(1, self.incorrect_count + self.correct_count)
+        return error_weight * 2.0 + recency_bonus
+
 
 class Repository(ABC):
     @abstractmethod

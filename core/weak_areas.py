@@ -105,5 +105,5 @@ class WeakAreaService:
         }
         for key, words in keywords.items():
             if key in area_lower:
-                return any(w in text_lower for w in words[:5])
+                return any(w in text_lower for w in words)
         return False
