@@ -111,10 +111,11 @@ async def cb_onb_interest(callback: CallbackQuery, repo: Repository) -> None:
     code = callback.data.split(":")[-1]
     if code == "done":
         await callback.answer()
-        await callback.message.edit_text(
-            _done_text(),
-            reply_markup=main_menu(),
-        )
+        await callback.message.edit_text(_done_text(), reply_markup=main_menu())
+        from bot.lessons import _start_lesson
+        from core.lessons import LessonService
+        lesson_service = LessonService(repo)
+        await _start_lesson(callback.message, repo, lesson_service, None, callback.from_user)
         return
 
     user = await repo.get_or_create_user(
