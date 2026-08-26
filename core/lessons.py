@@ -99,7 +99,7 @@ Rules:
 """
 
 LEVEL_DESCRIPTIONS = {
-    None: "intermediate (B1)",
+    None: "beginner (A1)",
     "A1": "beginner (A1)",
     "A2": "elementary (A2)",
     "B1": "intermediate (B1)",
@@ -108,7 +108,7 @@ LEVEL_DESCRIPTIONS = {
 }
 
 LEVEL_RULES = {
-    None: "",
+    None: "Keep everything simple: basic vocabulary, short sentences, tasks that require only simple answers.",
     "A1": "Keep everything simple: basic vocabulary, short sentences, tasks that require only simple answers.",
     "A2": "Use everyday vocabulary and simple sentences; allow tasks with short answers about daily life.",
     "B1": "Use intermediate vocabulary and a few complex sentences; tasks may ask for opinions.",

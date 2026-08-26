@@ -73,9 +73,9 @@ def test_build_prompt_without_topic():
     assert "choice" in messages[2]["content"]
 
 
-def test_build_prompt_defaults_to_b1_level():
+def test_build_prompt_defaults_to_a1_level():
     messages = build_lesson_prompt("Chess")
-    assert "intermediate (B1)" in messages[0]["content"]
+    assert "beginner (A1)" in messages[0]["content"]
 
 
 def test_build_prompt_with_level_a1():
@@ -90,9 +90,9 @@ def test_build_prompt_with_level_c1():
     assert "argue and explain" in messages[0]["content"]
 
 
-def test_build_prompt_with_unknown_level_falls_back_to_b1():
+def test_build_prompt_with_unknown_level_falls_back_to_a1():
     messages = build_lesson_prompt("Chess", level="X9")
-    assert "intermediate (B1)" in messages[0]["content"]
+    assert "beginner (A1)" in messages[0]["content"]
 
 
 def test_build_prompt_with_profile():
