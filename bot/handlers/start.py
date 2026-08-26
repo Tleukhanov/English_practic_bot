@@ -142,17 +142,6 @@ async def cmd_start(message: Message, repo: Repository) -> None:
         await message.answer(_welcome_text(name), reply_markup=_level_keyboard())
         return
 
-    if active_lesson or active_diagnostic:
-        await message.answer(
-            "🔄 Предыдущее занятие сброшено. Начнём заново!",
-            reply_markup=main_menu(),
-        )
-        return
-
-    if is_new:
-        await message.answer(_welcome_text(name), reply_markup=_level_keyboard())
-        return
-
     retention_service = RetentionService(repo)
     info = await retention_service.get_retention_info(message.from_user.id)
     greeting = _build_retention_message(name, info)
@@ -176,7 +165,12 @@ async def cb_abort_lesson(callback: CallbackQuery, repo: Repository) -> None:
 
 
 @router.callback_query(F.data == "start:resume_lesson")
-async def cb_resume_lesson(callback: CallbackQuery) -> None:
+async def cb_resume_lesson(callback: CallbackQuery, repo: Repository) -> None:
+    session = await repo.get_active_lesson(callback.from_user.id)
+    if not session:
+        await callback.message.edit_text("Урок уже завершён.", reply_markup=main_menu())
+        await callback.answer()
+        return
     await callback.message.edit_text(
         "Продолжай урок! Жми «➡️ Дальше» в последнем сообщении.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -194,7 +188,12 @@ async def cb_abort_diagnostic(callback: CallbackQuery, repo: Repository) -> None
 
 
 @router.callback_query(F.data == "start:resume_diagnostic")
-async def cb_resume_diagnostic(callback: CallbackQuery) -> None:
+async def cb_resume_diagnostic(callback: CallbackQuery, repo: Repository) -> None:
+    session = await repo.get_active_diagnostic(callback.from_user.id)
+    if not session:
+        await callback.message.edit_text("Диагностика уже завершена.", reply_markup=main_menu())
+        await callback.answer()
+        return
     await callback.message.edit_text(
         "Продолжай диагностику! Ответь на текущий вопрос.",
     )

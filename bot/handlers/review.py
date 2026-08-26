@@ -116,7 +116,7 @@ async def cb_review_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text("Повторение завершено.", reply_markup=main_menu())
 
 
-@router.message(ReviewState.answering)
+@router.message(ReviewState.answering, F.text)
 async def on_review_answer(message: Message, repo: Repository, srs: SRSService, state: FSMContext) -> None:
     text = message.text.strip()
     if not text or len(text) < 2:
@@ -150,7 +150,6 @@ async def on_review_answer(message: Message, repo: Repository, srs: SRSService, 
         )
     else:
         await state.clear()
-        from datetime import datetime, timezone
         await repo.add_user_message(
             user.id, f"[SRS review: {len(words)} words]",
             is_correct=None,

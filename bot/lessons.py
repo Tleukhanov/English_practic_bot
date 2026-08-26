@@ -295,16 +295,16 @@ async def cb_lesson_next(
             await state.clear()
         await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
 
-        from core.achievements import check_achievements, find_new_achievements
+        from core.achievements import check_achievements
         progress_svc = ProgressService(repo)
         progress = await progress_svc.get_progress(user.id, level=user.level)
         achievements = check_achievements(progress)
-        new_achievements = find_new_achievements([], achievements)
-        if new_achievements:
-            ach_text = "\n".join(f"{a.emoji} {a.name}" for a in new_achievements[:3])
+        earned = [a for a in achievements if a.earned]
+        if earned:
+            ach_text = "\n".join(f"{a.emoji} {a.name}" for a in earned[:3])
             await callback.message.answer(
-                f"🎉 **Новые достижения!**\n\n{ach_text}",
-                reply_markup=main_menu()
+                f"<b>Ваши достижения!</b>\n\n{ach_text}",
+                reply_markup=main_menu(),
             )
         return
 
