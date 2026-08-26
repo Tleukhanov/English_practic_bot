@@ -113,7 +113,7 @@ def _review_cancel_keyboard():
 async def cb_review_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.clear()
-    await callback.message.answer("Повторение завершено.", reply_markup=main_menu())
+    await callback.message.edit_text("Повторение завершено.", reply_markup=main_menu())
 
 
 @router.message(ReviewState.answering)
