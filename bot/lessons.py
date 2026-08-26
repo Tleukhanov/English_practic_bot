@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 
 from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from core.characters import character_prompt
@@ -32,6 +34,10 @@ from .utils import escape
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+
+class LessonNav(StatesGroup):
+    processing = State()
 
 
 def _finished_text(content, note: LessonNote | None = None) -> str:
@@ -244,7 +250,15 @@ async def cb_lesson_next(
     repo: Repository,
     note_service: LessonNoteService,
     srs: SRSService = None,
+    state: FSMContext = None,
 ) -> None:
+    if state:
+        current = await state.get_state()
+        if current and "LessonNav" in current:
+            await callback.answer()
+            return
+        await state.set_state(LessonNav.processing)
+
     user = await repo.get_or_create_user(
         callback.from_user.id,
         username=callback.from_user.username,
@@ -264,6 +278,8 @@ async def cb_lesson_next(
         await repo.update_lesson(session.id, task_index=session.task_index + 1)
         session.task_index += 1
         text = format_lesson_step("tasks", content, session.task_index)
+        if state:
+            await state.clear()
         await callback.message.edit_text(text, reply_markup=lesson_keyboard())
         return
 
@@ -274,12 +290,16 @@ async def cb_lesson_next(
         await repo.finish_active_lessons(user.id)
         await _merge_note_into_profile(repo, user.id, content, note)
         await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
+        if state:
+            await state.clear()
         await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
         return
 
     await repo.update_lesson(session.id, step=new_step, task_index=new_task_index)
     text = format_lesson_step(LESSON_STEPS[new_step], content, new_task_index)
     kb = lesson_recap_keyboard() if LESSON_STEPS[new_step] == "recap" else lesson_keyboard()
+    if state:
+        await state.clear()
     await callback.message.edit_text(text, reply_markup=kb)
 
 
