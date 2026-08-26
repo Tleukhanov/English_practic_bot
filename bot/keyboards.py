@@ -9,6 +9,7 @@ def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📚 Начать урок", callback_data="lesson_start")],
+            [InlineKeyboardButton(text="📖 Повторить слова", callback_data="review:start")],
             [InlineKeyboardButton(text="🎯 Определить уровень", callback_data="diagnostic_start")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
             [InlineKeyboardButton(text="🧠 Мой профиль", callback_data="profile")],

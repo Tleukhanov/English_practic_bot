@@ -19,6 +19,7 @@ from core.lesson_notes import LessonNoteService
 from core.lessons import LessonService
 from core.practice import PracticeService
 from core.profile import ProfileService
+from core.srs import SRSService
 from providers import create_llm, create_stt, create_tts
 from storage.sqlite import SQLiteRepository
 
@@ -30,6 +31,7 @@ from .handlers.character import router as character_router
 from .handlers.interests import router as interests_router
 from .handlers.progress import router as progress_router
 from .handlers.achievements import router as achievements_router
+from .handlers.review import router as review_router
 from .lessons import router as lessons_router
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ COMMANDS = [
     BotCommand(command="character", description="🎭 Выбрать персонажа"),
     BotCommand(command="interests", description="🎯 Мои интересы"),
     BotCommand(command="diagnostic", description="🎯 Определить уровень"),
+    BotCommand(command="review", description="📚 Повторить слова"),
     BotCommand(command="stats", description="Моя статистика"),
     BotCommand(command="progress", description="📊 Мой прогресс"),
     BotCommand(command="achievements", description="🎮 Достижения"),
@@ -77,6 +80,7 @@ async def main() -> None:
     diagnostic = DiagnosticService(llm)
     profile_service = ProfileService(llm)
     note_service = LessonNoteService(llm)
+    srs_service = SRSService(repo)
 
     bot = Bot(
         settings.telegram_bot_token,
@@ -90,6 +94,7 @@ async def main() -> None:
     dp["diagnostic_service"] = diagnostic
     dp["profile_service"] = profile_service
     dp["note_service"] = note_service
+    dp["srs"] = srs_service
     dp["stt"] = stt
     dp["tts"] = tts
     dp["settings"] = settings
@@ -104,6 +109,7 @@ async def main() -> None:
     dp.include_router(practice_router)
     dp.include_router(lessons_router)
     dp.include_router(diagnostic_router)
+    dp.include_router(review_router)
     dp.include_router(text.router)
     dp.include_router(voice.router)
 

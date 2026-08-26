@@ -16,6 +16,7 @@ from aiogram.types import CallbackQuery, Message
 
 from core.characters import character_prompt
 from core.lesson_notes import LessonNoteService
+from core.srs import SRSService
 from core.lessons import (
     LESSON_STEPS,
     LessonService,
@@ -59,6 +60,22 @@ async def _create_lesson_note(
     except Exception:
         logger.exception("Не удалось создать заметку урока user=%s lesson=%s", user_id, session_id)
         return None
+
+
+async def _save_lesson_vocabulary(repo: Repository, user_id: int, content, session_id: int, srs=None) -> None:
+    """Сохраняет слова урока в SRS (Фаза 13)."""
+    if srs is None or not content.vocabulary:
+        return
+    try:
+        words = [
+            {"word": w.word, "translation": w.translation, "example": w.example}
+            for w in content.vocabulary
+        ]
+        added = await srs.add_words(user_id, words, lesson_id=session_id)
+        if added:
+            logger.info("SRS: добавлено %d слов из урока user=%s", added, user_id)
+    except Exception:
+        logger.exception("Не удалось сохранить слова урока в SRS user=%s", user_id)
 
 
 async def _merge_note_into_profile(repo: Repository, user_id: int, content, note: LessonNote | None) -> None:
@@ -226,6 +243,7 @@ async def cb_lesson_next(
     callback: CallbackQuery,
     repo: Repository,
     note_service: LessonNoteService,
+    srs: SRSService = None,
 ) -> None:
     user = await repo.get_or_create_user(
         callback.from_user.id,
@@ -254,6 +272,7 @@ async def cb_lesson_next(
         note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
         await repo.finish_active_lessons(user.id)
         await _merge_note_into_profile(repo, user.id, content, note)
+        await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
         await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
         return
 
@@ -286,6 +305,7 @@ async def cb_lesson_end(
     callback: CallbackQuery,
     repo: Repository,
     note_service: LessonNoteService,
+    srs: SRSService = None,
 ) -> None:
     user = await repo.get_or_create_user(
         callback.from_user.id,
@@ -302,4 +322,5 @@ async def cb_lesson_end(
     note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
     await repo.finish_active_lessons(user.id)
     await _merge_note_into_profile(repo, user.id, content, note)
+    await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
     await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
