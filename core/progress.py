@@ -36,14 +36,13 @@ class ProgressService:
     def __init__(self, repo: Repository):
         self._repo = repo
 
-    async def get_progress(self, user_id: int) -> ProgressData:
+    async def get_progress(self, user_id: int, level: str | None = None) -> ProgressData:
         """Собирает полную статистику прогресса."""
         profile = await self._repo.get_profile(user_id)
         stats = await self._repo.get_stats(user_id)
         notes = await self._repo.get_lesson_notes(user_id, limit=50)
         practice_dates = await self._repo.get_practice_dates(user_id, limit=50)
 
-        level = ""
         character = profile.character if profile and profile.character else "default"
         interests = profile.interests if profile and profile.interests else ""
 

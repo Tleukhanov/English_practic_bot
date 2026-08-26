@@ -19,7 +19,7 @@ router = Router()
 async def cmd_achievements(message: Message, repo: Repository) -> None:
     user = await repo.get_or_create_user(message.from_user.id)
     service = ProgressService(repo)
-    progress = await service.get_progress(message.from_user.id)
+    progress = await service.get_progress(user.id, level=user.level)
     achievements = check_achievements(progress)
     await message.answer(format_achievements(achievements, progress), reply_markup=main_menu())
 
@@ -32,7 +32,7 @@ async def cb_achievements(callback: CallbackQuery, repo: Repository) -> None:
         first_name=callback.from_user.first_name,
     )
     service = ProgressService(repo)
-    progress = await service.get_progress(callback.from_user.id)
+    progress = await service.get_progress(user.id, level=user.level)
     achievements = check_achievements(progress)
     await callback.message.answer(format_achievements(achievements, progress), reply_markup=main_menu())
     await callback.answer()

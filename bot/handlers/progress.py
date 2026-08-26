@@ -18,7 +18,7 @@ router = Router()
 async def cmd_progress(message: Message, repo: Repository) -> None:
     user = await repo.get_or_create_user(message.from_user.id)
     service = ProgressService(repo)
-    data = await service.get_progress(message.from_user.id)
+    data = await service.get_progress(user.id, level=user.level)
     await message.answer(format_progress(data), reply_markup=main_menu())
 
 
@@ -30,6 +30,6 @@ async def cb_progress(callback: CallbackQuery, repo: Repository) -> None:
         first_name=callback.from_user.first_name,
     )
     service = ProgressService(repo)
-    data = await service.get_progress(callback.from_user.id)
+    data = await service.get_progress(user.id, level=user.level)
     await callback.message.answer(format_progress(data), reply_markup=main_menu())
     await callback.answer()
