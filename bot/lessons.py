@@ -70,7 +70,7 @@ async def _merge_note_into_profile(repo: Repository, user_id: int, content, note
         if profile is None:
             return
         grammar_rule = content.grammar.rule if content.grammar else ""
-        new_weak = merge_weak_areas(profile, grammar_rule, note.mistakes)
+        new_weak = await merge_weak_areas(profile, grammar_rule, note.mistakes, repo=repo)
         if new_weak != profile.weak_areas:
             profile.weak_areas = new_weak
             profile.updated_at = datetime.now(timezone.utc).isoformat()

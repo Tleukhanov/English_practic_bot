@@ -84,17 +84,19 @@ def test_profile_update_due():
     assert profile_update_due(UserProfile(user_id=1, updated_at="garbage"), now=now) is True
 
 
-def test_merge_weak_areas_deduplicates():
+@pytest.mark.asyncio
+async def test_merge_weak_areas_deduplicates():
     profile = UserProfile(user_id=1, weak_areas="артикли, порядок слов")
-    assert merge_weak_areas(profile, "Present Perfect") == "артикли, порядок слов, Present Perfect"
-    merged = merge_weak_areas(profile, "артикли", "", "  Present Perfect  ")
+    assert await merge_weak_areas(profile, "Present Perfect") == "артикли, порядок слов, Present Perfect"
+    merged = await merge_weak_areas(profile, "артикли", "", "  Present Perfect  ")
     assert merged == "артикли, порядок слов, Present Perfect"
 
 
-def test_merge_weak_areas_empty():
+@pytest.mark.asyncio
+async def test_merge_weak_areas_empty():
     profile = UserProfile(user_id=1)
-    assert merge_weak_areas(profile, "", "  ") == ""
-    assert merge_weak_areas(profile, "  articles  ") == "articles"
+    assert await merge_weak_areas(profile, "", "  ") == ""
+    assert await merge_weak_areas(profile, "  articles  ") == "articles"
 
 
 class FakeLLM(LLMProvider):

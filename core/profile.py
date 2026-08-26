@@ -114,11 +114,12 @@ def profile_update_due(
     return (now - updated).total_seconds() >= interval_sec
 
 
-def merge_weak_areas(profile: UserProfile, *parts: str) -> str:
+async def merge_weak_areas(profile: UserProfile, *parts: str, repo=None) -> str:
     """Дополняет profile.weak_areas новыми формулировками, не дублируя.
 
     Используется после урока: найденные грамматика и ошибки попадают в память
     пользователя (Фаза 5 -> Фаза 4).
+    Также записывает в таблицу user_weak_areas (Фаза 13).
     """
     additions = [part.strip() for part in parts if part and part.strip()]
     if not additions:
@@ -132,6 +133,17 @@ def merge_weak_areas(profile: UserProfile, *parts: str) -> str:
         item = item.strip()
         if item and item not in unique:
             unique.append(item)
+
+    if repo is not None:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        for item in additions:
+            if item.strip():
+                await repo.upsert_weak_area(
+                    profile.user_id, item.strip(),
+                    incorrect_increment=1, last_seen=now,
+                )
+
     return ", ".join(unique)
 
 
