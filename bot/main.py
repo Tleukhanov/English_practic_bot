@@ -32,6 +32,7 @@ from .handlers.interests import router as interests_router
 from .handlers.progress import router as progress_router
 from .handlers.achievements import router as achievements_router
 from .handlers.review import router as review_router
+from .handlers.onboarding import router as onboarding_router
 from .lessons import router as lessons_router
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,7 @@ async def main() -> None:
     dp["tts"] = tts
     dp["settings"] = settings
 
+    dp.include_router(onboarding_router)
     dp.include_router(start.router)
     dp.include_router(menu.router)
     dp.include_router(character_router)

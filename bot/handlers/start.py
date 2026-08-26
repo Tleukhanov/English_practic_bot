@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
@@ -11,6 +13,7 @@ from storage.repo import Repository
 from ..keyboards import main_menu
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 WELCOME_TEXT = """Привет, {name}! 👋
 
@@ -94,8 +97,9 @@ def _build_retention_message(name: str, info) -> str | None:
 @router.message(CommandStart())
 async def cmd_start(message: Message, repo: Repository) -> None:
     from core.retention import RetentionService
+    from .onboarding import _welcome_text, _level_keyboard
 
-    await repo.get_or_create_user(
+    user = await repo.get_or_create_user(
         message.from_user.id,
         username=message.from_user.username,
         first_name=message.from_user.first_name,
@@ -105,6 +109,16 @@ async def cmd_start(message: Message, repo: Repository) -> None:
     await repo.abort_active_diagnostics(message.from_user.id)
 
     name = message.from_user.first_name or "друг"
+
+    is_new = user.level is None
+    if is_new:
+        notes = await repo.get_lesson_notes(user.id, limit=1)
+        if notes:
+            is_new = False
+
+    if is_new:
+        await message.answer(_welcome_text(name), reply_markup=_level_keyboard())
+        return
 
     retention_service = RetentionService(repo)
     info = await retention_service.get_retention_info(message.from_user.id)
