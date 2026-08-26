@@ -150,6 +150,11 @@ async def on_review_answer(message: Message, repo: Repository, srs: SRSService, 
         )
     else:
         await state.clear()
+        from datetime import datetime, timezone
+        await repo.add_user_message(
+            user.id, f"[SRS review: {len(words)} words]",
+            is_correct=None,
+        )
         final_stats = await srs.get_stats(user.id)
         await message.answer(
             f"🎉 Повторение завершено!\n"
