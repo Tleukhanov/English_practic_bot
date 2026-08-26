@@ -26,7 +26,7 @@ from core.profile import merge_weak_areas, to_profile_snippet
 from storage.repo import LessonNote, Repository, TopicProposal
 
 from .formatters import format_lesson_note, format_lesson_step
-from .keyboards import lesson_keyboard, main_menu, topic_proposals_keyboard
+from .keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu, topic_proposals_keyboard
 from .utils import escape
 
 router = Router()
@@ -259,7 +259,8 @@ async def cb_lesson_next(
 
     await repo.update_lesson(session.id, step=new_step, task_index=new_task_index)
     text = format_lesson_step(LESSON_STEPS[new_step], content, new_task_index)
-    await callback.message.edit_text(text, reply_markup=lesson_keyboard())
+    kb = lesson_recap_keyboard() if LESSON_STEPS[new_step] == "recap" else lesson_keyboard()
+    await callback.message.edit_text(text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "lesson:repeat")
@@ -276,7 +277,8 @@ async def cb_lesson_repeat(callback: CallbackQuery, repo: Repository) -> None:
     await callback.answer()
     content = lesson_content_from_json(session.content_json)
     text = format_lesson_step(LESSON_STEPS[session.step], content, session.task_index)
-    await callback.message.edit_text(text, reply_markup=lesson_keyboard())
+    kb = lesson_recap_keyboard() if LESSON_STEPS[session.step] == "recap" else lesson_keyboard()
+    await callback.message.edit_text(text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "lesson:end")

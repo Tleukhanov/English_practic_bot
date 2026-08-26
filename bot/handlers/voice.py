@@ -22,9 +22,10 @@ from providers.audio import to_ogg_opus, to_wav
 from providers.base import STTProvider, TTSProvider
 from storage.repo import Repository
 
+from core.lessons import LESSON_STEPS
 from ..diagnostic import process_diagnostic_answer
 from ..flow import get_or_create_user, practice_markup, run_practice
-from ..keyboards import lesson_keyboard
+from ..keyboards import lesson_keyboard, lesson_recap_keyboard
 from ..utils import escape
 
 router = Router()
@@ -125,7 +126,7 @@ async def on_voice(
                     session = None
             except (ValueError, TypeError):
                 pass
-    reply_markup = lesson_keyboard() if session is not None else None
+    reply_markup = (lesson_recap_keyboard() if LESSON_STEPS[session.step] == "recap" else lesson_keyboard()) if session is not None else None
 
     status = await message.answer("🎧 Слушаю...")
     ogg_path, wav_path = _temp_paths(message.chat.id, message.message_id)

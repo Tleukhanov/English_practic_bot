@@ -17,9 +17,10 @@ from core.practice import PracticeService
 from core.profile import ProfileService
 from storage.repo import Repository
 
+from core.lessons import LESSON_STEPS
 from ..diagnostic import process_diagnostic_answer
 from ..flow import answer_practice, get_or_create_user
-from ..keyboards import lesson_keyboard
+from ..keyboards import lesson_keyboard, lesson_recap_keyboard
 from ..utils import is_mostly_cyrillic
 
 router = Router()
@@ -59,9 +60,10 @@ async def on_text(
                 pass
 
     if session is not None:
+        kb = lesson_recap_keyboard() if LESSON_STEPS[session.step] == "recap" else lesson_keyboard()
         await answer_practice(
             message, repo, practice, settings, text,
-            reply_markup=lesson_keyboard(), profile_service=profile_service, lesson_id=session.id,
+            reply_markup=kb, profile_service=profile_service, lesson_id=session.id,
         )
         return
 

@@ -31,6 +31,16 @@ def lesson_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def lesson_recap_keyboard() -> InlineKeyboardMarkup:
+    """Кнопки на финальном шаге recap — только завершить."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔁 Повторить", callback_data="lesson:repeat")],
+            [InlineKeyboardButton(text="🎓 Завершить урок", callback_data="lesson:end")],
+        ]
+    )
+
+
 def diagnostic_keyboard() -> InlineKeyboardMarkup:
     """Кнопки диагностики: пропустить задание или завершить досрочно."""
     return InlineKeyboardMarkup(
