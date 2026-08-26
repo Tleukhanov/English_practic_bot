@@ -36,6 +36,8 @@ Rules:
 - topics should be engaging and practical (not academic or boring)
 - descriptions must be in RUSSIAN, 1 sentence, explain what the student will learn
 - If the student has interests listed in their profile, at least 2 of 3 topics MUST revolve around those interests. This is critical — the student should feel the lessons are tailored specifically for them.
+- NEVER suggest a topic that was already covered. The list of banned topics is provided below — follow it strictly.
+- If interests overlap with banned topics, pick a DIFFERENT angle within that interest (e.g. if "cooking" is banned, try "restaurant English" or "food culture around the world").
 """
 
 
@@ -250,7 +252,11 @@ def _render_proposals_prompt(level: str | None = None, profile: str | None = Non
     if profile:
         extras.append(profile)
     if recent_topics:
-        extras.append("Avoid these recent topics: " + ", ".join(recent_topics) + ".")
+        extras.append(
+            "BANNED TOPICS (you MUST NOT suggest any of these): "
+            + ", ".join(recent_topics)
+            + ". Pick completely different topics."
+        )
     if extras:
         parts.append("\n" + " ".join(extras))
     return "\n".join(parts)

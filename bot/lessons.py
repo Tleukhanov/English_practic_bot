@@ -118,7 +118,7 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
     status = await target.answer("⏳ Составляю структурированный урок...")
     try:
         profile = await repo.get_profile(user.id)
-        recent_notes = await repo.get_lesson_notes(user.id, limit=10)
+        recent_notes = await repo.get_lesson_notes(user.id, limit=50)
         recent_topics = list(reversed([n.topic for n in recent_notes])) if recent_notes else None
         char_prompt = character_prompt(profile.character if profile else "")
 
@@ -192,7 +192,7 @@ async def cb_select_topic(
     status = await callback.message.answer("⏳ Составляю урок...")
     try:
         profile = await repo.get_profile(user.id)
-        recent_notes = await repo.get_lesson_notes(user.id, limit=10)
+        recent_notes = await repo.get_lesson_notes(user.id, limit=50)
         recent_topics = list(reversed([n.topic for n in recent_notes])) if recent_notes else None
         char_prompt = character_prompt(profile.character if profile else "")
         content = await lesson_service.generate(
