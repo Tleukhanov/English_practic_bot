@@ -40,7 +40,8 @@ class ProgressService:
         """Собирает полную статистику прогресса."""
         profile = await self._repo.get_profile(user_id)
         stats = await self._repo.get_stats(user_id)
-        notes = await self._repo.get_lesson_notes(user_id, limit=20)
+        notes = await self._repo.get_lesson_notes(user_id, limit=50)
+        practice_dates = await self._repo.get_practice_dates(user_id, limit=50)
 
         level = ""
         character = profile.character if profile and profile.character else "default"
@@ -55,7 +56,7 @@ class ProgressService:
         weak_areas = self._get_weak_areas(notes)
         strong_areas = self._get_strong_areas(notes)
 
-        streak_days = self._get_streak(notes)
+        streak_days = self._get_streak(notes, practice_dates)
 
         xp = self._calculate_xp(total_lessons, correct, errors)
 
@@ -110,26 +111,31 @@ class ProgressService:
         return list(topics_without_mistakes - topics_with_mistakes)[:5]
 
     @staticmethod
-    def _get_streak(notes: list) -> int:
-        """Считает серию дней подряд."""
+    def _get_streak(notes: list, practice_dates: list[str] | None = None) -> int:
+        """Считает серию дней подряд из lesson_notes + practice dates (messages)."""
         from datetime import datetime, timezone, timedelta
 
-        if not notes:
-            return 0
+        dates_set: set = set()
 
-        dates = []
         for note in notes:
             if note.created_at:
                 try:
                     dt = datetime.fromisoformat(note.created_at.replace("Z", "+00:00"))
-                    dates.append(dt.date())
+                    dates_set.add(dt.date())
                 except (ValueError, TypeError):
                     continue
 
-        if not dates:
+        if practice_dates:
+            for day_str in practice_dates:
+                try:
+                    dates_set.add(datetime.strptime(day_str, "%Y-%m-%d").date())
+                except (ValueError, TypeError):
+                    continue
+
+        if not dates_set:
             return 0
 
-        dates = sorted(set(dates), reverse=True)
+        dates = sorted(dates_set, reverse=True)
         today = datetime.now(timezone.utc).date()
 
         if dates[0] != today and dates[0] != today - timedelta(days=1):
