@@ -124,7 +124,7 @@ async def run_practice(
     reply = format_practice_soft(result)
     if prefix:
         reply = f"{prefix}\n\n{reply}"
-    await repo.add_assistant_message(user.id, format_practice_result(result, html=False))
+    await repo.add_assistant_message(user.id, format_practice_result(result, html=True))
 
     if profile_service is not None and profile_update_due(profile):
         asyncio.create_task(
