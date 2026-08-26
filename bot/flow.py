@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.config import Settings
 from core.models import PracticeResult
@@ -47,8 +47,12 @@ def issues_to_json(result) -> str:
 def practice_markup(result: PracticeResult, base_markup: InlineKeyboardMarkup | None = None) -> InlineKeyboardMarkup | None:
     """Клавиатура к ответу практики: при ошибке предлагаем кнопку «Показать ошибку».
 
-    Внутри урока (base_markup задан) сохраняем клавиатуру урока.
+    Внутри урока (base_markup задан) добавляем кнопку «Показать ошибку» к клавиатуре урока.
     """
+    if not result.is_correct and base_markup is not None:
+        existing_rows = [row[:] for row in base_markup.inline_keyboard]
+        existing_rows.insert(0, [InlineKeyboardButton(text="🔍 Показать ошибку", callback_data="practice:reveal")])
+        return InlineKeyboardMarkup(inline_keyboard=existing_rows)
     if not result.is_correct and base_markup is None:
         return reveal_keyboard()
     return base_markup

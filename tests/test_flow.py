@@ -20,4 +20,6 @@ def test_practice_markup_keeps_lesson_keyboard():
     result = PracticeResult(is_correct=False, corrected_text="")
     base = lesson_keyboard()
     markup = practice_markup(result, base)
-    assert markup is base
+    assert markup is not None
+    assert len(markup.inline_keyboard) == len(base.inline_keyboard) + 1
+    assert markup.inline_keyboard[0][0].callback_data == "practice:reveal"
