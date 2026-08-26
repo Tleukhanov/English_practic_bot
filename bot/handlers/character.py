@@ -65,5 +65,6 @@ async def cb_set_character(callback: CallbackQuery, repo: Repository) -> None:
     await callback.answer(f"{character.emoji} {character.name} выбран!")
     await callback.message.edit_text(
         f"{character.emoji} Персонаж: <b>{character.name}</b>\n\n{character.description}\n\n"
-        f"Теперь все уроки и практика будут в этом стиле. Смени: /character"
+        f"Теперь все уроки и практика будут в этом стиле. Смени: /character",
+        reply_markup=main_menu(),
     )

@@ -13,6 +13,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from datetime import datetime, timezone
 
+from ..keyboards import main_menu
+
 from storage.repo import Repository, UserProfile
 
 router = Router()
@@ -121,4 +123,4 @@ async def cb_interests_done(callback: CallbackQuery, repo: Repository) -> None:
         text = "Интересы очищены. Уроки будут на общие темы."
 
     await callback.answer()
-    await callback.message.edit_text(text)
+    await callback.message.edit_text(text, reply_markup=main_menu())

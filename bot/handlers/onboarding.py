@@ -108,9 +108,9 @@ async def cb_onb_level(callback: CallbackQuery, repo: Repository) -> None:
 
 @router.callback_query(F.data.startswith("onb:interest:"))
 async def cb_onb_interest(callback: CallbackQuery, repo: Repository) -> None:
-    await callback.answer()
     code = callback.data.split(":")[-1]
     if code == "done":
+        await callback.answer()
         await callback.message.edit_text(
             _done_text(),
             reply_markup=main_menu(),
@@ -130,4 +130,6 @@ async def cb_onb_interest(callback: CallbackQuery, repo: Repository) -> None:
             profile.interests = new_interests
             await repo.save_profile(profile)
         logger.info("Onboarding: user=%s interest=%s", user.id, code)
-    await callback.answer("✅ Добавлено!", show_alert=False)
+        await callback.answer("✅ Добавлено!", show_alert=False)
+    else:
+        await callback.answer("Уже выбрано", show_alert=False)

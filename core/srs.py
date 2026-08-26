@@ -6,26 +6,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-
-@dataclass
-class SRSWord:
-    """Слово в системе SRS."""
-
-    id: int = 0
-    user_id: int = 0
-    word: str = ""
-    translation: str = ""
-    example: str = ""
-    lesson_id: int = 0
-    next_review: str = ""
-    interval_days: int = 1
-    ease_factor: float = 2.5
-    correct_count: int = 0
-    last_reviewed: str = ""
-    created_at: str = ""
+from storage.repo import SRSWord
 
 
 class SRSService:

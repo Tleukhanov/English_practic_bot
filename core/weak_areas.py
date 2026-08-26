@@ -100,8 +100,6 @@ class WeakAreaService:
         text_lower = text.lower()
         keywords = {
             "grammar": ["did", "was", "were", "have", "has", "had", "go", "went"],
-            "vocabulary": text_lower.split(),
-            "word order": text_lower.split(),
         }
         for key, words in keywords.items():
             if key in area_lower:

@@ -3,11 +3,8 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from core.retention import (
-    _parse_created_at,
-    _get_streak_days,
-    _get_weak_areas,
-)
+from core.retention import _parse_created_at
+from core.progress import ProgressService
 from storage.repo import LessonNote
 
 
@@ -27,34 +24,44 @@ def test_parse_created_at_invalid():
     assert _parse_created_at("not-a-date") is None
 
 
-# --- _get_streak_days ---
+# --- streak via ProgressService ---
 
 def test_streak_single_day():
-    today = datetime.now(timezone.utc).isoformat()
-    assert _get_streak_days([today]) == 1
+    today = datetime.now(timezone.utc)
+    notes = [LessonNote(created_at=today.isoformat())]
+    assert ProgressService._get_streak(notes) == 1
 
 
 def test_streak_two_days():
     today = datetime.now(timezone.utc)
-    yesterday = (today - timedelta(days=1)).isoformat()
-    assert _get_streak_days([today.isoformat(), yesterday]) == 2
+    yesterday = today - timedelta(days=1)
+    notes = [
+        LessonNote(created_at=today.isoformat()),
+        LessonNote(created_at=yesterday.isoformat()),
+    ]
+    assert ProgressService._get_streak(notes) == 2
 
 
 def test_streak_broken():
     today = datetime.now(timezone.utc)
-    three_days_ago = (today - timedelta(days=3)).isoformat()
-    assert _get_streak_days([today.isoformat(), three_days_ago]) == 1
+    three_days_ago = today - timedelta(days=3)
+    notes = [
+        LessonNote(created_at=today.isoformat()),
+        LessonNote(created_at=three_days_ago.isoformat()),
+    ]
+    assert ProgressService._get_streak(notes) == 1
 
 
 def test_streak_empty():
-    assert _get_streak_days([]) == 0
+    assert ProgressService._get_streak([]) == 0
 
 
 def test_streak_invalid_dates():
-    assert _get_streak_days(["invalid", "also-invalid"]) == 0
+    notes = [LessonNote(created_at="invalid"), LessonNote(created_at="also-invalid")]
+    assert ProgressService._get_streak(notes) == 0
 
 
-# --- _get_weak_areas ---
+# --- weak areas via ProgressService ---
 
 def test_weak_areas_from_notes():
     notes = [
@@ -62,19 +69,19 @@ def test_weak_areas_from_notes():
         LessonNote(mistakes="Present Simple, Past Perfect"),
         LessonNote(mistakes="Past Simple"),
     ]
-    areas = _get_weak_areas(notes)
+    areas = ProgressService._get_weak_areas(notes)
     assert "Present Simple" in areas
     assert "Past Simple" in areas
     assert len(areas) <= 5
 
 
 def test_weak_areas_empty():
-    assert _get_weak_areas([]) == []
+    assert ProgressService._get_weak_areas([]) == []
 
 
 def test_weak_areas_no_mistakes():
     notes = [LessonNote(mistakes=""), LessonNote(mistakes=None)]
-    assert _get_weak_areas(notes) == []
+    assert ProgressService._get_weak_areas(notes) == []
 
 
 def test_weak_areas_frequency():
@@ -84,5 +91,5 @@ def test_weak_areas_frequency():
         LessonNote(mistakes="Past Simple"),
         LessonNote(mistakes="Present Simple"),
     ]
-    areas = _get_weak_areas(notes)
+    areas = ProgressService._get_weak_areas(notes)
     assert areas[0] == "Past Simple"

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from bot.config import Settings
@@ -35,8 +36,13 @@ async def on_text(
     diagnostic_service: DiagnosticService,
     profile_service: ProfileService,
     settings: Settings,
+    state: FSMContext,
 ) -> None:
     text = message.text.strip()
+
+    current_state = await state.get_state()
+    if current_state and "ReviewState" in current_state:
+        return
 
     if is_mostly_cyrillic(text):
         await message.answer("😉 Пиши, пожалуйста, по-английски! Я репетитор английского и отвечаю на английском.")
@@ -55,6 +61,10 @@ async def on_text(
                 age_hours = (datetime.now(timezone.utc) - updated).total_seconds() / 3600
                 if age_hours > 1:
                     await repo.abort_active_lessons(user.id)
+                    await message.answer(
+                        "⏰ Урок устарел (прошло больше часа) и был завершён.\n"
+                        "Начни новый: /lesson",
+                    )
                     session = None
             except (ValueError, TypeError):
                 pass

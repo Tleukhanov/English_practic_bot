@@ -115,6 +115,22 @@ async def main() -> None:
     dp.include_router(text.router)
     dp.include_router(voice.router)
 
+    from aiogram.types import ErrorEvent
+    @dp.error()
+    async def global_error_handler(event: ErrorEvent) -> None:
+        logger.exception("Unhandled error: %s", event.exception)
+        try:
+            if hasattr(event.update, "message") and event.update.message:
+                await event.update.message.answer(
+                    "⚠️ Произошла ошибка. Попробуй ещё раз или нажми /start."
+                )
+            elif hasattr(event.update, "callback_query") and event.update.callback_query:
+                await event.update.callback_query.message.answer(
+                    "⚠️ Произошла ошибка. Попробуй ещё раз или нажми /start."
+                )
+        except Exception:
+            pass
+
     await bot.set_my_commands(COMMANDS)
 
     from core.scheduler import setup_scheduler

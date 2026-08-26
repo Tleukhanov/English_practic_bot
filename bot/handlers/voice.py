@@ -123,6 +123,10 @@ async def on_voice(
                 age_hours = (datetime.now(timezone.utc) - updated).total_seconds() / 3600
                 if age_hours > 1:
                     await repo.abort_active_lessons(user.id)
+                    await message.answer(
+                        "⏰ Урок устарел (прошло больше часа) и был завершён.\n"
+                        "Начни новый: /lesson",
+                    )
                     session = None
             except (ValueError, TypeError):
                 pass

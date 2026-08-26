@@ -10,6 +10,8 @@ import logging
 
 from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from core.srs import SRSService
@@ -21,7 +23,11 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 
-async def _start_review(message: Message, repo: Repository, srs: SRSService) -> None:
+class ReviewState(StatesGroup):
+    answering = State()
+
+
+async def _start_review(message: Message, repo: Repository, srs: SRSService, state: FSMContext = None) -> None:
     user = await repo.get_or_create_user(
         message.from_user.id,
         username=message.from_user.username,
@@ -29,6 +35,8 @@ async def _start_review(message: Message, repo: Repository, srs: SRSService) -> 
     )
     stats = await srs.get_stats(user.id)
     if stats["due"] == 0:
+        if state:
+            await state.clear()
         await message.answer(
             f"🎉 Нет слов для повторения!\n"
             f"Всего слов: {stats['total']}, выучено: {stats['learned']}\n\n"
@@ -39,9 +47,13 @@ async def _start_review(message: Message, repo: Repository, srs: SRSService) -> 
 
     words = await srs.get_due_words(user.id, limit=10)
     if not words:
+        if state:
+            await state.clear()
         await message.answer("🎉 Все слова повторены на сегодня!", reply_markup=main_menu())
         return
 
+    if state:
+        await state.set_state(ReviewState.answering)
     first = words[0]
     await message.answer(
         _review_card(first, stats["due"], 0),
@@ -80,14 +92,14 @@ def _review_result_card(word, is_correct: bool, next_interval: int) -> str:
 
 
 @router.message(Command("review"))
-async def cmd_review(message: Message, repo: Repository, srs: SRSService) -> None:
-    await _start_review(message, repo, srs)
+async def cmd_review(message: Message, repo: Repository, srs: SRSService, state: FSMContext) -> None:
+    await _start_review(message, repo, srs, state)
 
 
 @router.callback_query(F.data == "review:start")
-async def cb_review_start(callback: CallbackQuery, repo: Repository, srs: SRSService) -> None:
+async def cb_review_start(callback: CallbackQuery, repo: Repository, srs: SRSService, state: FSMContext) -> None:
     await callback.answer()
-    await _start_review(callback.message, repo, srs)
+    await _start_review(callback.message, repo, srs, state)
 
 
 def _review_cancel_keyboard():
@@ -98,13 +110,14 @@ def _review_cancel_keyboard():
 
 
 @router.callback_query(F.data == "review:cancel")
-async def cb_review_cancel(callback: CallbackQuery) -> None:
+async def cb_review_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
+    await state.clear()
     await callback.message.answer("Повторение завершено.", reply_markup=main_menu())
 
 
-@router.message(F.text, ~F.text.startswith("/"))
-async def on_review_answer(message: Message, repo: Repository, srs: SRSService) -> None:
+@router.message(ReviewState.answering)
+async def on_review_answer(message: Message, repo: Repository, srs: SRSService, state: FSMContext) -> None:
     text = message.text.strip()
     if not text or len(text) < 2:
         return
@@ -136,6 +149,7 @@ async def on_review_answer(message: Message, repo: Repository, srs: SRSService) 
             reply_markup=_review_cancel_keyboard(),
         )
     else:
+        await state.clear()
         final_stats = await srs.get_stats(user.id)
         await message.answer(
             f"🎉 Повторение завершено!\n"

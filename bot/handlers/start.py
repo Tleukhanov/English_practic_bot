@@ -105,8 +105,10 @@ async def cmd_start(message: Message, repo: Repository) -> None:
         first_name=message.from_user.first_name,
     )
 
-    await repo.abort_active_lessons(message.from_user.id)
-    await repo.abort_active_diagnostics(message.from_user.id)
+    active_lesson = await repo.get_active_lesson(user.id)
+    active_diagnostic = await repo.get_active_diagnostic(user.id)
+    await repo.abort_active_lessons(user.id)
+    await repo.abort_active_diagnostics(user.id)
 
     name = message.from_user.first_name or "друг"
 
@@ -115,6 +117,17 @@ async def cmd_start(message: Message, repo: Repository) -> None:
         notes = await repo.get_lesson_notes(user.id, limit=1)
         if notes:
             is_new = False
+
+    if is_new:
+        await message.answer(_welcome_text(name), reply_markup=_level_keyboard())
+        return
+
+    if active_lesson or active_diagnostic:
+        await message.answer(
+            "🔄 Предыдущее занятие сброшено. Начнём заново!",
+            reply_markup=main_menu(),
+        )
+        return
 
     if is_new:
         await message.answer(_welcome_text(name), reply_markup=_level_keyboard())
