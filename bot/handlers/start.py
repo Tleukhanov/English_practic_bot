@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, Message
 
 from storage.repo import Repository
 
-from ..keyboards import main_menu
+from ..keyboards import main_menu, main_menu_with_srs
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -137,10 +137,15 @@ async def cmd_start(message: Message, repo: Repository) -> None:
     info = await retention_service.get_retention_info(message.from_user.id)
     greeting = _build_retention_message(name, info)
 
+    from core.srs import SRSService
+    srs = SRSService(repo)
+    due_words = (await srs.get_due_words(user.id, limit=100))
+    due_count = len(due_words)
+
     if greeting:
-        await message.answer(greeting, reply_markup=main_menu())
+        await message.answer(greeting, reply_markup=main_menu_with_srs(due_count))
     else:
-        await message.answer(WELCOME_TEXT.format(name=name), reply_markup=main_menu())
+        await message.answer(WELCOME_TEXT.format(name=name), reply_markup=main_menu_with_srs(due_count))
 
 
 @router.message(Command("help"))
