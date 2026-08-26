@@ -87,6 +87,14 @@ def check_achievements(p: ProgressData) -> list[Achievement]:
     return achievements
 
 
+def find_new_achievements(
+    previous: list[Achievement], current: list[Achievement]
+) -> list[Achievement]:
+    """Находит достижения, которые были_UNLOCKED между двумя проверками."""
+    prev_earned = {a.id for a in previous if a.earned}
+    return [a for a in current if a.earned and a.id not in prev_earned]
+
+
 _CHECKS: dict[str, callable] = {
     "first_lesson": lambda p: p.total_lessons >= 1,
     "five_lessons": lambda p: p.total_lessons >= 5,

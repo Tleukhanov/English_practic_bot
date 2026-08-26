@@ -18,6 +18,7 @@ from aiogram.types import CallbackQuery, Message
 
 from core.characters import character_prompt
 from core.lesson_notes import LessonNoteService
+from core.progress import ProgressService
 from core.srs import SRSService
 from core.lessons import (
     LESSON_STEPS,
@@ -293,6 +294,18 @@ async def cb_lesson_next(
         if state:
             await state.clear()
         await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
+
+        from core.achievements import check_achievements, find_new_achievements
+        progress_svc = ProgressService(repo)
+        progress = await progress_svc.get_progress(user.id, level=user.level)
+        achievements = check_achievements(progress)
+        new_achievements = find_new_achievements([], achievements)
+        if new_achievements:
+            ach_text = "\n".join(f"{a.emoji} {a.name}" for a in new_achievements[:3])
+            await callback.message.answer(
+                f"🎉 **Новые достижения!**\n\n{ach_text}",
+                reply_markup=main_menu()
+            )
         return
 
     await repo.update_lesson(session.id, step=new_step, task_index=new_task_index)
