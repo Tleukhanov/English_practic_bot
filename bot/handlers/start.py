@@ -6,7 +6,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from storage.repo import Repository
 
@@ -107,8 +107,28 @@ async def cmd_start(message: Message, repo: Repository) -> None:
 
     active_lesson = await repo.get_active_lesson(user.id)
     active_diagnostic = await repo.get_active_diagnostic(user.id)
-    await repo.abort_active_lessons(user.id)
-    await repo.abort_active_diagnostics(user.id)
+
+    if active_lesson:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚠️ Да, прервать", callback_data="start:abort_lesson")],
+            [InlineKeyboardButton(text="📚 Вернуться к уроку", callback_data="start:resume_lesson")],
+        ])
+        await message.answer(
+            "⚠️ У тебя идёт урок! Прервать его?",
+            reply_markup=kb,
+        )
+        return
+
+    if active_diagnostic:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚠️ Да, прервать", callback_data="start:abort_diagnostic")],
+            [InlineKeyboardButton(text="🎯 Вернуться к диагностике", callback_data="start:resume_diagnostic")],
+        ])
+        await message.answer(
+            "⚠️ У тебя идёт диагностика! Прервать её?",
+            reply_markup=kb,
+        )
+        return
 
     name = message.from_user.first_name or "друг"
 
@@ -146,6 +166,39 @@ async def cmd_start(message: Message, repo: Repository) -> None:
         await message.answer(greeting, reply_markup=main_menu_with_srs(due_count))
     else:
         await message.answer(WELCOME_TEXT.format(name=name), reply_markup=main_menu_with_srs(due_count))
+
+
+@router.callback_query(F.data == "start:abort_lesson")
+async def cb_abort_lesson(callback: CallbackQuery, repo: Repository) -> None:
+    await repo.abort_active_lessons(callback.from_user.id)
+    await callback.message.edit_text("Урок прерван.", reply_markup=main_menu())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "start:resume_lesson")
+async def cb_resume_lesson(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(
+        "Продолжай урок! Жми «➡️ Дальше» в последнем сообщении.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Дальше", callback_data="lesson:next")],
+        ]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "start:abort_diagnostic")
+async def cb_abort_diagnostic(callback: CallbackQuery, repo: Repository) -> None:
+    await repo.abort_active_diagnostics(callback.from_user.id)
+    await callback.message.edit_text("Диагностика прервана.", reply_markup=main_menu())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "start:resume_diagnostic")
+async def cb_resume_diagnostic(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(
+        "Продолжай диагностику! Ответь на текущий вопрос.",
+    )
+    await callback.answer()
 
 
 @router.message(Command("help"))
