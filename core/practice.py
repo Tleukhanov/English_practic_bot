@@ -46,6 +46,7 @@ Rules:
 - "spoken_reply" is required: it is what gets read aloud by text-to-speech.
 - Explanations ("problem", "suggestion") and "tone" must be in Russian. Everything else in English.
 - Never translate the student's message to Russian; the dialogue stays in English.
+- IMPORTANT: Check the conversation history. If the student is making the SAME mistake they made before, call it out explicitly in "tone" — mention that they already made this mistake before and need to pay attention. This is critical for learning.
 """
 
 
