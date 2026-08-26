@@ -21,7 +21,7 @@ from storage.repo import Repository
 from core.lessons import LESSON_STEPS
 from ..diagnostic import process_diagnostic_answer
 from ..flow import answer_practice, get_or_create_user
-from ..keyboards import lesson_keyboard, lesson_recap_keyboard
+from ..keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu
 from ..utils import is_mostly_cyrillic
 
 router = Router()
@@ -45,7 +45,10 @@ async def on_text(
         return
 
     if is_mostly_cyrillic(text):
-        await message.answer("😉 Пиши, пожалуйста, по-английски! Я репетитор английского и отвечаю на английском.")
+        await message.answer(
+            "😉 Пиши, пожалуйста, по-английски! Я репетитор английского и отвечаю на английском.",
+            reply_markup=main_menu(),
+        )
         return
 
     user = await get_or_create_user(message, repo)
