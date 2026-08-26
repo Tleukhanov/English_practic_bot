@@ -15,6 +15,7 @@ from core.models import PracticeResult
 from core.characters import character_prompt
 from core.practice import PracticeParseError, PracticeService
 from core.profile import ProfileService, profile_update_due, to_profile_snippet
+from core.weak_areas import WeakAreaService
 from storage.repo import Repository, UserProfile, UserRow
 
 from .formatters import format_practice_result, format_practice_soft, format_reveal
@@ -109,8 +110,14 @@ async def run_practice(
     char_prompt = character_prompt(profile.character if profile else "")
     history = await repo.get_history(user.id, settings.max_context_messages)
 
+    weak_svc = WeakAreaService(repo)
+    weak_areas_prompt = await weak_svc.get_top_for_prompt(user.id)
+
     await message.bot.send_chat_action(message.chat.id, action="typing")
-    result = await practice.analyze(text, history, profile=snippet, character_prompt=char_prompt)
+    result = await practice.analyze(
+        text, history, profile=snippet, character_prompt=char_prompt,
+        weak_areas_prompt=weak_areas_prompt,
+    )
 
     await repo.add_user_message(
         user.id,
@@ -120,6 +127,9 @@ async def run_practice(
         corrected_text=result.corrected_text,
         lesson_id=lesson_id,
     )
+
+    await weak_svc.update_from_practice(user.id, result.issues, result.is_correct, result.corrected_text)
+    await weak_svc.decay(user.id)
 
     reply = format_practice_soft(result)
     if prefix:

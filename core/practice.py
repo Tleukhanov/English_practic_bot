@@ -56,11 +56,13 @@ def build_prompt(
     max_history: int = 6,
     profile: str | None = None,
     character_prompt: str = "",
+    weak_areas_prompt: str = "",
 ) -> list[dict[str, str]]:
     """Собирает сообщения для LLM: системный промпт + недавняя история + текущая реплика.
 
     profile — сниппет из памяти пользователя (Фаза 4).
     character_prompt — инструкции персонажа (Фаза 8), определяют тон общения.
+    weak_areas_prompt — строка с топ слабыми областями (Фаза 13).
     """
     system = SYSTEM_PROMPT
     if profile:
@@ -68,6 +70,14 @@ def build_prompt(
             f"\n\n{profile}\n"
             "Tailor follow-up questions and examples to the student's interests, "
             "level and weak areas when possible."
+        )
+
+    if weak_areas_prompt:
+        system += (
+            f"\n\n{weak_areas_prompt}\n"
+            "IMPORTANT: When generating follow-up questions, PRIORITIZE these weak areas. "
+            "Ask questions that naturally require the student to practice these specific skills. "
+            "If the student has answered correctly 3+ times for an area, reduce how often you ask about it."
         )
 
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
@@ -135,7 +145,8 @@ class PracticeService:
         history: list[dict[str, str]],
         profile: str | None = None,
         character_prompt: str = "",
+        weak_areas_prompt: str = "",
     ) -> PracticeResult:
-        messages = build_prompt(text, history, max_history=self._max_history, profile=profile, character_prompt=character_prompt)
+        messages = build_prompt(text, history, max_history=self._max_history, profile=profile, character_prompt=character_prompt, weak_areas_prompt=weak_areas_prompt)
         raw = await self._llm.chat(messages, json_mode=True)
         return parse_practice_response(raw)
