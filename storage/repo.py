@@ -138,6 +138,19 @@ class SRSWord:
     created_at: str = ""
 
 
+@dataclass
+class LeaderboardRow:
+    """Строка лидерборда."""
+
+    user_id: int = 0
+    username: str | None = None
+    first_name: str | None = None
+    level: str | None = None
+    xp: int = 0
+    total_lessons: int = 0
+    streak_days: int = 0
+
+
 class Repository(ABC):
     @abstractmethod
     async def connect(self) -> None: ...
@@ -282,3 +295,8 @@ class Repository(ABC):
 
     @abstractmethod
     async def update_srs_word(self, word: SRSWord) -> None: ...
+
+    # ---------- лидерборд ----------
+
+    @abstractmethod
+    async def get_leaderboard(self, limit: int = 20) -> list[LeaderboardRow]: ...

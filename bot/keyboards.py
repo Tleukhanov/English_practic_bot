@@ -15,6 +15,7 @@ def main_menu() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="📈 Прогресс", callback_data="progress"),
                 InlineKeyboardButton(text="🏆 Достижения", callback_data="achievements"),
+                InlineKeyboardButton(text="🏅 Рейтинг", callback_data="leaderboard"),
             ],
             [InlineKeyboardButton(text="🧠 Мой профиль", callback_data="profile")],
             [InlineKeyboardButton(text="🔄 Сброс", callback_data="reset")],
@@ -35,6 +36,7 @@ def main_menu_with_srs(due_words: int = 0) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="📈 Прогресс", callback_data="progress"),
                 InlineKeyboardButton(text="🏆 Достижения", callback_data="achievements"),
+                InlineKeyboardButton(text="🏅 Рейтинг", callback_data="leaderboard"),
             ],
             [InlineKeyboardButton(text="🧠 Мой профиль", callback_data="profile")],
             [InlineKeyboardButton(text="🔄 Сброс", callback_data="reset")],

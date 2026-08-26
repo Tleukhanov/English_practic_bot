@@ -19,6 +19,7 @@ import aiosqlite
 
 from .repo import (
     DiagnosticSession,
+    LeaderboardRow,
     LessonNote,
     LessonSession,
     Repository,
@@ -821,6 +822,57 @@ class SQLiteRepository(Repository):
                 username=row["username"],
                 first_name=row["first_name"],
                 level=row["level"],
+            )
+            for row in rows
+        ]
+
+    # ---------- лидерборд ----------
+
+    async def get_leaderboard(self, limit: int = 20) -> list[LeaderboardRow]:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            """
+            SELECT
+                u.id AS user_id,
+                u.username,
+                u.first_name,
+                u.level,
+                COALESCE(ln.cnt, 0) AS total_lessons,
+                COALESCE(m.correct, 0) AS correct,
+                COALESCE(m.errors, 0) AS errors,
+                (COALESCE(ln.cnt, 0) * 10
+                 + COALESCE(m.correct, 0) * 5
+                 - COALESCE(m.errors, 0) * 2) AS xp
+            FROM users u
+            LEFT JOIN (
+                SELECT user_id, COUNT(*) AS cnt
+                FROM lesson_notes
+                GROUP BY user_id
+            ) ln ON ln.user_id = u.id
+            LEFT JOIN (
+                SELECT user_id,
+                    SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct,
+                    SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END) AS errors
+                FROM messages
+                WHERE role = 'user' AND is_correct IS NOT NULL
+                GROUP BY user_id
+            ) m ON m.user_id = u.id
+            WHERE xp > 0
+            ORDER BY xp DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            LeaderboardRow(
+                user_id=row["user_id"],
+                username=row["username"],
+                first_name=row["first_name"],
+                level=row["level"],
+                xp=row["xp"],
+                total_lessons=row["total_lessons"],
+                streak_days=0,
             )
             for row in rows
         ]
