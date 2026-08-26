@@ -120,6 +120,24 @@ class WeakArea:
         return error_weight * 2.0 + recency_bonus
 
 
+@dataclass
+class SRSWord:
+    """Слово в системе spaced repetition (Фаза 13)."""
+
+    id: int = 0
+    user_id: int = 0
+    word: str = ""
+    translation: str = ""
+    example: str = ""
+    lesson_id: int = 0
+    next_review: str = ""
+    interval_days: int = 1
+    ease_factor: float = 2.5
+    correct_count: int = 0
+    last_reviewed: str = ""
+    created_at: str = ""
+
+
 class Repository(ABC):
     @abstractmethod
     async def connect(self) -> None: ...
@@ -247,3 +265,20 @@ class Repository(ABC):
 
     @abstractmethod
     async def delete_weak_area(self, user_id: int, area: str) -> None: ...
+
+    # ---------- SRS vocabulary (Фаза 13) ----------
+
+    @abstractmethod
+    async def add_srs_word(self, word: SRSWord) -> int: ...
+
+    @abstractmethod
+    async def get_srs_word(self, user_id: int, word: str) -> SRSWord | None: ...
+
+    @abstractmethod
+    async def get_srs_word_by_id(self, word_id: int) -> SRSWord | None: ...
+
+    @abstractmethod
+    async def get_srs_words(self, user_id: int, limit: int = 100) -> list[SRSWord]: ...
+
+    @abstractmethod
+    async def update_srs_word(self, word: SRSWord) -> None: ...

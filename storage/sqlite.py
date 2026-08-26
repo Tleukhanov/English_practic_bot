@@ -22,6 +22,7 @@ from .repo import (
     LessonNote,
     LessonSession,
     Repository,
+    SRSWord,
     Stats,
     TopicProposal,
     UserProfile,
@@ -158,6 +159,24 @@ class SQLiteRepository(Repository):
                 last_seen TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT '',
                 UNIQUE(user_id, area)
+            )
+        """)
+
+        await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_vocabulary (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                word TEXT NOT NULL,
+                translation TEXT NOT NULL DEFAULT '',
+                example TEXT NOT NULL DEFAULT '',
+                lesson_id INTEGER NOT NULL DEFAULT 0,
+                next_review TEXT NOT NULL DEFAULT '',
+                interval_days INTEGER NOT NULL DEFAULT 1,
+                ease_factor REAL NOT NULL DEFAULT 2.5,
+                correct_count INTEGER NOT NULL DEFAULT 0,
+                last_reviewed TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '',
+                UNIQUE(user_id, word)
             )
         """)
 
@@ -723,6 +742,71 @@ class SQLiteRepository(Repository):
             (user_id, area),
         )
         await conn.commit()
+
+    # ---------- SRS vocabulary (Фаза 13) ----------
+
+    async def add_srs_word(self, word: SRSWord) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "INSERT OR IGNORE INTO user_vocabulary "
+            "(user_id, word, translation, example, lesson_id, next_review, interval_days, ease_factor, correct_count, last_reviewed, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (word.user_id, word.word, word.translation, word.example,
+             word.lesson_id, word.next_review, word.interval_days,
+             word.ease_factor, word.correct_count, word.last_reviewed, word.created_at),
+        )
+        await conn.commit()
+        return cursor.lastrowid or 0
+
+    async def get_srs_word(self, user_id: int, word: str) -> SRSWord | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM user_vocabulary WHERE user_id = ? AND word = ?",
+            (user_id, word),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_srs_word(row)
+
+    async def get_srs_word_by_id(self, word_id: int) -> SRSWord | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM user_vocabulary WHERE id = ?", (word_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_srs_word(row)
+
+    async def get_srs_words(self, user_id: int, limit: int = 100) -> list[SRSWord]:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM user_vocabulary WHERE user_id = ? ORDER BY next_review ASC LIMIT ?",
+            (user_id, limit),
+        )
+        return [self._row_to_srs_word(row) for row in await cursor.fetchall()]
+
+    async def update_srs_word(self, word: SRSWord) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE user_vocabulary SET "
+            "next_review=?, interval_days=?, ease_factor=?, correct_count=?, last_reviewed=? "
+            "WHERE id=?",
+            (word.next_review, word.interval_days, word.ease_factor,
+             word.correct_count, word.last_reviewed, word.id),
+        )
+        await conn.commit()
+
+    def _row_to_srs_word(self, row) -> SRSWord:
+        return SRSWord(
+            id=row["id"], user_id=row["user_id"], word=row["word"],
+            translation=row["translation"], example=row["example"],
+            lesson_id=row["lesson_id"], next_review=row["next_review"],
+            interval_days=row["interval_days"], ease_factor=row["ease_factor"],
+            correct_count=row["correct_count"], last_reviewed=row["last_reviewed"],
+            created_at=row["created_at"],
+        )
 
     async def get_all_users(self) -> list[UserRow]:
         conn = self._require_conn()
