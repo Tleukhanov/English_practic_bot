@@ -6,7 +6,7 @@ from core.achievements import (
     get_level_for_xp,
     get_next_level,
     format_achievements,
-    _check_condition,
+    _CHECKS,
     ACHIEVEMENTS_LIST,
     LEVEL_THRESHOLDS,
 )
@@ -47,20 +47,20 @@ def test_next_level_max():
 
 def test_condition_lessons():
     p = ProgressData(total_lessons=5)
-    assert _check_condition("lessons >= 5", p) is True
-    assert _check_condition("lessons >= 10", p) is False
+    assert _CHECKS["five_lessons"](p) is True
+    assert _CHECKS["ten_lessons"](p) is False
 
 
 def test_condition_accuracy():
     p = ProgressData(accuracy=85.0, total_turns=25)
-    assert _check_condition("accuracy >= 80 and turns >= 20", p) is True
-    assert _check_condition("accuracy >= 95 and turns >= 30", p) is False
+    assert _CHECKS["accuracy_80"](p) is True
+    assert _CHECKS["accuracy_95"](p) is False
 
 
 def test_condition_streak():
     p = ProgressData(streak_days=7)
-    assert _check_condition("streak >= 7", p) is True
-    assert _check_condition("streak >= 14", p) is False
+    assert _CHECKS["streak_7"](p) is True
+    assert _CHECKS["streak_14"](p) is False
 
 
 # --- Achievements ---

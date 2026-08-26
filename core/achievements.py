@@ -74,7 +74,8 @@ def check_achievements(p: ProgressData) -> list[Achievement]:
     """Проверяет все достижения и возвращает список с earned=True/False."""
     achievements = []
     for ach_def in ACHIEVEMENTS_LIST:
-        earned = _check_condition(ach_def["condition"], p)
+        check_fn = _CHECKS.get(ach_def["id"])
+        earned = check_fn(p) if check_fn else False
         achievements.append(Achievement(
             id=ach_def["id"],
             name=ach_def["name"],
@@ -86,20 +87,23 @@ def check_achievements(p: ProgressData) -> list[Achievement]:
     return achievements
 
 
-def _check_condition(condition: str, p: ProgressData) -> bool:
-    """Простой eval для condition строк."""
-    ctx = {
-        "lessons": p.total_lessons,
-        "correct": p.correct,
-        "turns": p.total_turns,
-        "streak": p.streak_days,
-        "accuracy": p.accuracy,
-        "xp": p.xp,
-    }
-    try:
-        return bool(eval(condition, {"__builtins__": {}}, ctx))
-    except Exception:
-        return False
+_CHECKS: dict[str, callable] = {
+    "first_lesson": lambda p: p.total_lessons >= 1,
+    "five_lessons": lambda p: p.total_lessons >= 5,
+    "ten_lessons": lambda p: p.total_lessons >= 10,
+    "twenty_lessons": lambda p: p.total_lessons >= 20,
+    "first_correct": lambda p: p.correct >= 1,
+    "fifty_turns": lambda p: p.total_turns >= 50,
+    "hundred_turns": lambda p: p.total_turns >= 100,
+    "streak_3": lambda p: p.streak_days >= 3,
+    "streak_7": lambda p: p.streak_days >= 7,
+    "streak_14": lambda p: p.streak_days >= 14,
+    "accuracy_80": lambda p: p.accuracy >= 80 and p.total_turns >= 20,
+    "accuracy_95": lambda p: p.accuracy >= 95 and p.total_turns >= 30,
+    "xp_100": lambda p: p.xp >= 100,
+    "xp_500": lambda p: p.xp >= 500,
+    "xp_1000": lambda p: p.xp >= 1000,
+}
 
 
 def format_achievements(achievements: list[Achievement], p: ProgressData) -> str:
