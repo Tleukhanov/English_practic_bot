@@ -110,6 +110,24 @@ TTS: `TTS_PROVIDER=edge-tts` (бесплатно) или `openai`.
 - `faster-whisper` работает на CPU (модель `small` — быстра и точна), модель скачивается один раз при первом использовании
 - Ответ бота: текст проверки + голосовое с исправленной фразой (mp3 от edge-tts → ogg/opus через ffmpeg, т.к. Telegram принимает голосовые только в этом формате)
 
+## Деплой с Docker
+
+```bash
+# 1. Скопировать .env.example → .env и заполнить
+cp .env.example .env
+
+# 2. Собрать и запустить
+docker compose up -d --build
+
+# 3. Логи
+docker compose logs -f bot
+
+# 4. Остановить
+docker compose down
+```
+
+Данные (SQLite + кэш Whisper) хранятся в `./data/` на хосте — переживают пересоздание контейнера. Бот автоматически рестартует (`restart: unless-stopped`).
+
 ## Тесты
 
 ```bash

@@ -1,0 +1,20 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: english_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DATABASE_PATH=/data/english_bot.db
+      - HF_HOME=/data/hf_cache
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3, os; sqlite3.connect(os.environ.get('DATABASE_PATH', '/data/english_bot.db')).execute('SELECT 1')"]
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
