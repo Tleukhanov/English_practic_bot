@@ -4,7 +4,6 @@ from bot.config import Settings
 
 from .base import LLMProvider, STTProvider, TTSProvider
 from .llm_openai import OpenAIChatProvider
-from .stt_faster_whisper import FasterWhisperProvider
 from .tts_edge import EdgeTTSProvider
 
 
@@ -27,6 +26,8 @@ def create_llm(settings: Settings) -> LLMProvider:
 def create_stt(settings: Settings) -> STTProvider:
     provider = settings.stt_provider.lower()
     if provider == "faster-whisper":
+        from .stt_faster_whisper import FasterWhisperProvider
+
         return FasterWhisperProvider(model_name=settings.stt_model)
     if provider == "openai":
         if not settings.stt_api_key:

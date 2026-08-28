@@ -49,7 +49,13 @@ class TestFormatLeaderboard:
     def test_position_inside_top_10(self) -> None:
         rows = [_make_row(1, "Аня", 300, 10)]
         result = format_leaderboard(rows, 1, current_user_position=1)
-        assert "📌" not in result
+        assert "📌" in result
+        assert "#1" in result
+
+    def test_no_position_shows_cta(self) -> None:
+        rows = [_make_row(1, "Аня", 300, 10)]
+        result = format_leaderboard(rows, 99, current_user_position=None)
+        assert "не в рейтинге" in result
 
     def test_streak_displayed(self) -> None:
         rows = [_make_row(1, "Иван", 100, 5, streak=7)]

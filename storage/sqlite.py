@@ -864,15 +864,54 @@ class SQLiteRepository(Repository):
             (limit,),
         )
         rows = await cursor.fetchall()
-        return [
-            LeaderboardRow(
+        result = []
+        for row in rows:
+            streak = await self._calc_streak(row["user_id"])
+            result.append(LeaderboardRow(
                 user_id=row["user_id"],
                 username=row["username"],
                 first_name=row["first_name"],
                 level=row["level"],
                 xp=row["xp"],
                 total_lessons=row["total_lessons"],
-                streak_days=0,
-            )
-            for row in rows
-        ]
+                streak_days=streak,
+            ))
+        return result
+
+    async def _calc_streak(self, user_id: int) -> int:
+        """Считает стрик (дни подряд) для пользователя."""
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT DISTINCT substr(created_at, 1, 10) AS day "
+            "FROM messages WHERE user_id = ? AND role = 'user' "
+            "UNION "
+            "SELECT DISTINCT substr(created_at, 1, 10) AS day "
+            "FROM lesson_notes WHERE user_id = ? "
+            "ORDER BY day DESC LIMIT 60",
+            (user_id, user_id),
+        )
+        dates = [row["day"] for row in await cursor.fetchall()]
+        if not dates:
+            return 0
+
+        from datetime import datetime, timedelta
+        today = datetime.now().date()
+        streak = 0
+        expected = today
+
+        for date_str in dates:
+            try:
+                d = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if d == expected:
+                streak += 1
+                expected -= timedelta(days=1)
+            elif d == expected - timedelta(days=1):
+                expected = d
+                streak += 1
+                expected -= timedelta(days=1)
+            else:
+                break
+
+        return streak

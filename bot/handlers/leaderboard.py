@@ -17,7 +17,11 @@ router = Router()
 
 @router.message(Command("leaderboard"))
 async def cmd_leaderboard(message: Message, repo: Repository) -> None:
-    user = await repo.get_or_create_user(message.from_user.id)
+    user = await repo.get_or_create_user(
+        message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+    )
     rows = await repo.get_leaderboard(limit=10)
 
     current_position = None

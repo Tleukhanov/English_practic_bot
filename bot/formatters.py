@@ -329,8 +329,6 @@ def format_leaderboard(
     current_user_position: int | None = None,
 ) -> str:
     """Форматирует лидерборд."""
-    from storage.repo import LeaderboardRow
-
     if not rows:
         return "🏅 Лидерборд\n\nПока никто не заработал XP. Будь первым!"
 
@@ -340,15 +338,17 @@ def format_leaderboard(
 
     for i, row in enumerate(rows, 1):
         medal = medals.get(i, f"{i:2d}.")
-        name = row.first_name or row.username or f"User{row.user_id}"
+        name = escape(row.first_name or row.username or f"User{row.user_id}")
         streak = f"🔥 {row.streak_days}" if row.streak_days > 0 else ""
         parts = [f"{row.xp} XP", f"{row.total_lessons} урок."]
         if streak:
             parts.append(streak)
         lines.append(f"{medal} <b>{name}</b> — {' · '.join(parts)}")
 
-    if current_user_position is not None and current_user_position > len(rows):
+    if current_user_position is not None:
         lines.append("")
         lines.append(f"———\n📌 Ты: <b>#{current_user_position}</b> место")
-
+    else:
+        lines.append("")
+        lines.append("📌 Ты пока не в рейтинге. Пройди урок или попрактикуйся, чтобы заработать XP!")
     return "\n".join(lines)
