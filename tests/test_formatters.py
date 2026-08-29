@@ -175,9 +175,17 @@ def _sample_lesson() -> LessonContent:
 
 def test_format_lesson_intro():
     text = format_lesson_step("intro", _sample_lesson())
-    assert "Урок: Travelling" in text
+    assert "Обычный урок" in text
+    assert "Travelling" in text
     assert "Let's talk about travelling!" in text
     assert "План урока" in text
+
+
+def test_format_lesson_intro_shows_type_label():
+    story = LessonContent(topic="The Space Trip", intro="A story about a trip!", lesson_type="story")
+    text = format_lesson_step("intro", story)
+    assert "Урок-история" in text
+    assert "The Space Trip" in text
 
 
 def test_format_lesson_vocabulary():

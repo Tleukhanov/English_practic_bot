@@ -2,6 +2,7 @@ import pytest
 
 from bot.lessons import LESSON_STEPS, next_lesson_position
 from core.lessons import (
+    LESSON_TYPES,
     LessonParseError,
     LessonService,
     build_lesson_prompt,
@@ -55,6 +56,15 @@ def test_parse_lesson_response_missing_fields():
     assert content.slides == []
     assert content.grammar is None
     assert content.tasks == []
+    assert content.lesson_type == "standard"
+
+
+def test_parse_lesson_response_unknown_type_falls_back_to_standard():
+    content = parse_lesson_response('{"topic": "Chess", "lesson_type": "weird"}')
+    assert content.lesson_type == "standard"
+
+    content = parse_lesson_response('{"topic": "Chess", "lesson_type": "STORY"}')
+    assert content.lesson_type == "story"
 
 
 def test_parse_lesson_response_invalid_raises():
@@ -126,6 +136,34 @@ async def test_lesson_service_generates_and_parses():
     assert content.topic == "Travelling"
     assert len(content.tasks) == 2
     assert llm.last_temperature == 0.7
+
+
+async def test_lesson_service_generates_with_lesson_type():
+    llm = FakeLLM(VALID_LESSON_JSON.replace('"topic": "Travelling"', '"topic": "Travelling", "lesson_type": "story"'))
+    service = LessonService(llm)
+    content = await service.generate("Travelling", lesson_type="story")
+    assert content.lesson_type == "story"
+
+
+def test_build_prompt_injects_lesson_type():
+    messages = build_lesson_prompt("Chess", lesson_type="quiz")
+    system = messages[0]["content"]
+    assert "Quiz-style lesson" in system
+    assert '"quiz"' in system
+
+    messages = build_lesson_prompt("Chess", lesson_type="story")
+    assert "Build the lesson around a tiny story" in messages[0]["content"]
+
+    assert set(LESSON_TYPES) == {"standard", "story", "dialogue", "quiz", "ideas"}
+
+
+def test_lesson_type_json_roundtrip():
+    content = parse_lesson_response('{"topic": "Travelling", "lesson_type": "story"}')
+    restored = lesson_content_from_json(lesson_content_to_json(content))
+    assert restored.lesson_type == "story"
+
+    legacy = lesson_content_from_json('{"topic": "Travelling", "intro": "hi"}')
+    assert legacy.lesson_type == "standard"
 
 
 def test_practice_parse_error_alias_compat():

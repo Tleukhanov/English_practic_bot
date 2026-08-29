@@ -18,6 +18,15 @@ LessonParseError = JsonParseError
 
 LESSON_STEPS = ["intro", "vocabulary", "slides", "grammar", "tasks", "recap"]
 
+# Форматы урока: каждый меняет акценты, чтобы уроки не повторялись.
+LESSON_TYPES = {
+    "standard": "Balanced lesson: a short engaging intro, practical vocabulary, a few useful ideas, one simple grammar point.",
+    "story": "Build the lesson around a tiny story: the intro opens the story, the slides continue the plot, and the tasks ask about the story and the student's own experience.",
+    "dialogue": "Conversation-focused lesson: vocabulary and tasks serve a short dialogue; tasks are questions that keep the student talking.",
+    "quiz": "Quiz-style lesson: tasks are quick interactive questions (fill-in-the-blank, choose the correct option, or 'translate this') with one right answer each.",
+    "ideas": "Discussion lesson: slides present a few opinions or facts, and tasks ask the student to agree/disagree and explain why.",
+}
+
 TOPIC_PROPOSALS_SYSTEM_PROMPT = """You are an English teacher choosing lesson topics for a Russian-speaking student.
 
 Generate exactly 3 interesting, distinct topics. Each topic has a short English name and a 1-sentence Russian description of why it is interesting and what the student will learn.
@@ -63,6 +72,7 @@ class LessonContent:
     slides: list[str] = field(default_factory=list)
     grammar: GrammarBlock | None = None
     tasks: list[str] = field(default_factory=list)
+    lesson_type: str = "standard"
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are an English teacher creating a structured mini-lesson for a Russian-speaking learner at the __LEVEL_DESC__ level.
@@ -76,7 +86,8 @@ Respond ONLY with a single valid JSON object. No markdown, no extra text, no cod
 JSON schema:
 {
   "topic": "topic name",
-  "intro": "1-2 friendly English sentences introducing the topic and why it is interesting",
+  "lesson_type": "standard",
+  "intro": "1-2 short friendly English sentences introducing the topic and why it is interesting",
   "vocabulary": [
     {"word": "english word", "translation": "russian translation", "example": "short english example sentence"}
   ],
@@ -90,12 +101,15 @@ JSON schema:
 }
 
 Rules:
-- vocabulary: 6 to 8 words with Russian translations and short examples.
-- slides: 3 to 5 concise bullet points that summarize the most useful ideas/words about the topic.
+- Keep the lesson SHORT and impactful: the student should finish it in about 3-5 minutes (quick read + 2-3 short answers).
+- vocabulary: 3 to 4 words with Russian translations and short examples.
+- slides: 2 to 3 concise bullet points that summarize the most useful ideas/words about the topic.
 - grammar: pick ONE simple grammar point naturally connected to the topic and suited to the student's level.
-- tasks: 3 to 5 short speaking tasks or questions the student should answer in English.
+- tasks: 2 to 3 short speaking tasks or questions the student should answer in English.
 - intro, slides, examples, tasks, words and their examples must be in ENGLISH.
 - translations and explanation_ru must be in RUSSIAN.
+
+__LESSON_TYPE_RULES__
 """
 
 LEVEL_DESCRIPTIONS = {
@@ -122,11 +136,17 @@ def _render_system_prompt(
     profile: str | None = None,
     recent_topics: list[str] | None = None,
     character_prompt: str = "",
+    lesson_type: str = "standard",
 ) -> str:
+    type_rules = LESSON_TYPES.get(lesson_type, LESSON_TYPES["standard"])
     text = SYSTEM_PROMPT_TEMPLATE.replace(
         "__LEVEL_DESC__", LEVEL_DESCRIPTIONS.get(level, LEVEL_DESCRIPTIONS[None])
     ).replace(
         "__LEVEL_RULES__", LEVEL_RULES.get(level, "")
+    ).replace(
+        "__LESSON_TYPE_RULES__",
+        f"Lesson format: {type_rules}\n"
+        f'Set "lesson_type" to exactly: "{lesson_type}".',
     )
     if profile:
         text += (
@@ -156,10 +176,11 @@ def build_lesson_prompt(
     profile: str | None = None,
     recent_topics: list[str] | None = None,
     character_prompt: str = "",
+    lesson_type: str = "standard",
 ) -> list[dict[str, str]]:
     user_message = f"Create a structured lesson. Topic: {topic}" if topic else "Create a structured lesson on an interesting topic of your choice."
     return [
-        {"role": "system", "content": _render_system_prompt(level, profile, recent_topics, character_prompt)},
+        {"role": "system", "content": _render_system_prompt(level, profile, recent_topics, character_prompt, lesson_type)},
         {
             "role": "system",
             "content": (
@@ -197,6 +218,9 @@ def parse_lesson_response(raw: str) -> LessonContent:
             examples=[str(e) for e in (grammar_raw.get("examples") or []) if isinstance(e, str)],
         )
 
+    lesson_type = str(payload.get("lesson_type", "")).strip().lower()
+    if lesson_type not in LESSON_TYPES:
+        lesson_type = "standard"
     return LessonContent(
         topic=str(payload.get("topic", "")).strip() or "Без темы",
         intro=str(payload.get("intro", "")).strip(),
@@ -204,6 +228,7 @@ def parse_lesson_response(raw: str) -> LessonContent:
         slides=[str(s) for s in (payload.get("slides") or []) if isinstance(s, str)],
         grammar=grammar,
         tasks=[str(t) for t in (payload.get("tasks") or []) if isinstance(t, str)],
+        lesson_type=lesson_type,
     )
 
 
@@ -228,6 +253,7 @@ def lesson_content_from_json(raw: str) -> LessonContent:
         slides=[str(s) for s in payload.get("slides") or []],
         grammar=grammar,
         tasks=[str(t) for t in payload.get("tasks") or []],
+        lesson_type=str(payload.get("lesson_type", "standard")),
     )
 
 
@@ -275,8 +301,9 @@ class LessonService:
         profile: str | None = None,
         recent_topics: list[str] | None = None,
         character_prompt: str = "",
+        lesson_type: str = "standard",
     ) -> LessonContent:
-        messages = build_lesson_prompt(topic, level=level, profile=profile, recent_topics=recent_topics, character_prompt=character_prompt)
+        messages = build_lesson_prompt(topic, level=level, profile=profile, recent_topics=recent_topics, character_prompt=character_prompt, lesson_type=lesson_type)
         raw = await self._llm.chat(messages, temperature=0.7, json_mode=True)
         return parse_lesson_response(raw)
 

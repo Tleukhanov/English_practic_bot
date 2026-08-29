@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import random
 from datetime import datetime, timezone
 
 from aiogram import F, Router
@@ -21,6 +22,7 @@ from core.lesson_notes import LessonNoteService
 from core.srs import SRSService
 from core.lessons import (
     LESSON_STEPS,
+    LESSON_TYPES,
     LessonService,
     lesson_content_from_json,
     lesson_content_to_json,
@@ -120,6 +122,18 @@ def next_lesson_position(step: int, task_index: int, total_tasks: int) -> tuple[
     return step, 0, step >= len(LESSON_STEPS)
 
 
+_LAST_LESSON_TYPE: str | None = None
+
+
+def _pick_lesson_type() -> str:
+    """Выбирает формат урока так, чтобы подряд не повторялся один и тот же."""
+    global _LAST_LESSON_TYPE
+    options = [t for t in LESSON_TYPES if t != _LAST_LESSON_TYPE]
+    chosen = random.choice(options)
+    _LAST_LESSON_TYPE = chosen
+    return chosen
+
+
 async def _start_lesson(target, repo: Repository, lesson_service: LessonService, topic: str | None, user_from) -> None:
     user = await repo.get_or_create_user(
         user_from.id,
@@ -173,6 +187,7 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
             profile=to_profile_snippet(profile) or None,
             recent_topics=recent_topics,
             character_prompt=char_prompt,
+            lesson_type=_pick_lesson_type(),
         )
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)
@@ -225,6 +240,7 @@ async def cb_select_topic(
             profile=to_profile_snippet(profile) or None,
             recent_topics=recent_topics,
             character_prompt=char_prompt,
+            lesson_type=_pick_lesson_type(),
         )
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)

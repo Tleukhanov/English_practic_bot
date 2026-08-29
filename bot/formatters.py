@@ -189,9 +189,22 @@ def format_stats(stats: Stats, html: bool = True, level: str | None = None) -> s
 
 # ---------- Уроки (Фаза 1) ----------
 
+LESSON_TYPE_LABELS = {
+    "standard": "📚 Обычный урок",
+    "story": "📖 Урок-история",
+    "dialogue": "💬 Разговорный урок",
+    "quiz": "🎮 Урок-квиз",
+    "ideas": "💭 Обсуждение идей",
+}
+
+
+def _lesson_type_label(content) -> str:
+    return LESSON_TYPE_LABELS.get(content.lesson_type, LESSON_TYPE_LABELS["standard"])
+
+
 def format_lesson_intro(content: LessonContent) -> str:
     parts = [
-        _bold(f"📚 Урок: {escape(content.topic)}"),
+        _bold(f"{_lesson_type_label(content)} · {escape(content.topic)}"),
         "",
         escape(content.intro),
         "",
