@@ -284,14 +284,15 @@ class SQLiteRepository(Repository):
         issues_json: str = "",
         corrected_text: str = "",
         lesson_id: int | None = None,
-    ) -> None:
+    ) -> int:
         conn = self._require_conn()
-        await conn.execute(
+        cursor = await conn.execute(
             "INSERT INTO messages (user_id, role, content, is_correct, issues_json, corrected_text, lesson_id, created_at) "
             "VALUES (?, 'user', ?, ?, ?, ?, ?, ?)",
             (user_id, content, is_correct, issues_json, corrected_text, lesson_id, _now()),
         )
         await conn.commit()
+        return cursor.lastrowid
 
     async def add_assistant_message(self, user_id: int, content: str) -> None:
         conn = self._require_conn()
@@ -385,6 +386,23 @@ class SQLiteRepository(Repository):
         return {
             "is_correct": bool(row["is_correct"]),
             "corrected_text": row["corrected_text"],
+            "issues_json": row["issues_json"] or "",
+        }
+
+    async def get_user_message(self, user_id: int, message_id: int) -> dict | None:
+        """Разбор конкретной фразы по её id — кнопка «Показать ошибку» привязана к сообщению."""
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT is_correct, corrected_text, issues_json FROM messages "
+            "WHERE id = ? AND user_id = ? AND role = 'user'",
+            (message_id, user_id),
+        )
+        row = await cursor.fetchone()
+        if row is None or row["is_correct"] != 0:
+            return None
+        return {
+            "is_correct": bool(row["is_correct"]),
+            "corrected_text": row["corrected_text"] or "",
             "issues_json": row["issues_json"] or "",
         }
 

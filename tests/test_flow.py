@@ -23,3 +23,9 @@ def test_practice_markup_keeps_lesson_keyboard():
     assert markup is not None
     assert len(markup.inline_keyboard) == len(base.inline_keyboard) + 1
     assert markup.inline_keyboard[0][0].callback_data == "practice:reveal"
+
+
+def test_practice_markup_binds_to_message_id():
+    result = PracticeResult(is_correct=False, corrected_text="")
+    markup = practice_markup(result, lesson_keyboard(), message_id=42)
+    assert markup.inline_keyboard[0][0].callback_data == "practice:reveal:42"

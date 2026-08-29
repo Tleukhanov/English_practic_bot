@@ -184,7 +184,7 @@ async def on_voice(
         )
         return
 
-    await status.edit_text(turn.reply, reply_markup=practice_markup(turn.result, reply_markup))
+    await status.edit_text(turn.reply, reply_markup=practice_markup(turn.result, reply_markup, turn.message_id))
     from core.characters import character_voice
     profile = await repo.get_profile(user.id)
     voice_id = character_voice(profile.character if profile else "")

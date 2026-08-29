@@ -30,6 +30,7 @@ router = Router()
 class PracticeTurn:
     reply: str  # готовый HTML-ответ для пользователя
     result: PracticeResult  # структурированный результат (нужен для TTS)
+    message_id: int = 0  # id фразы пользователя в БД (для кнопки «Показать ошибку»)
 
 
 def issues_to_json(result) -> str:
@@ -45,17 +46,23 @@ def issues_to_json(result) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-def practice_markup(result: PracticeResult, base_markup: InlineKeyboardMarkup | None = None) -> InlineKeyboardMarkup | None:
+def practice_markup(
+    result: PracticeResult,
+    base_markup: InlineKeyboardMarkup | None = None,
+    message_id: int = 0,
+) -> InlineKeyboardMarkup | None:
     """Клавиатура к ответу практики: при ошибке предлагаем кнопку «Показать ошибку».
 
     Внутри урока (base_markup задан) добавляем кнопку «Показать ошибку» к клавиатуре урока.
+    message_id — id фразы в БД, чтобы «Показать ошибку» показывала разбор именно этой фразы.
     """
     if not result.is_correct and base_markup is not None:
         existing_rows = [row[:] for row in base_markup.inline_keyboard]
-        existing_rows.insert(0, [InlineKeyboardButton(text="🔍 Показать ошибку", callback_data="practice:reveal")])
+        data = f"practice:reveal:{message_id}" if message_id else "practice:reveal"
+        existing_rows.insert(0, [InlineKeyboardButton(text="🔍 Показать ошибку", callback_data=data)])
         return InlineKeyboardMarkup(inline_keyboard=existing_rows)
     if not result.is_correct and base_markup is None:
-        return reveal_keyboard()
+        return reveal_keyboard(message_id)
     return base_markup
 
 
@@ -119,7 +126,7 @@ async def run_practice(
         weak_areas_prompt=weak_areas_prompt,
     )
 
-    await repo.add_user_message(
+    msg_id = await repo.add_user_message(
         user.id,
         text,
         is_correct=result.is_correct,
@@ -141,7 +148,7 @@ async def run_practice(
             _update_profile_background(user.id, profile, history, text, repo, profile_service)
         )
 
-    return PracticeTurn(reply=reply, result=result)
+    return PracticeTurn(reply=reply, result=result, message_id=msg_id)
 
 
 async def answer_practice(
@@ -182,19 +189,25 @@ async def answer_practice(
             "Попробуй ещё раз через пару минут."
         )
         return
-    await message.answer(turn.reply, reply_markup=practice_markup(turn.result, reply_markup))
+    await message.answer(turn.reply, reply_markup=practice_markup(turn.result, reply_markup, turn.message_id))
 
 
 @router.callback_query(F.data == "practice:reveal")
+@router.callback_query(F.data.startswith("practice:reveal:"))
 async def cb_practice_reveal(callback: CallbackQuery, repo: Repository) -> None:
-    """Кнопка «Показать ошибку»: показывает подробный разбор последней фразы."""
+    """Кнопка «Показать ошибку»: разбор конкретной фразы (без id — последней)."""
     try:
         user = await repo.get_or_create_user(
             callback.from_user.id,
             username=callback.from_user.username,
             first_name=callback.from_user.first_name,
         )
-        correction = await repo.get_last_correction(user.id)
+        parts = callback.data.split(":")
+        message_id = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else 0
+        if message_id:
+            correction = await repo.get_user_message(user.id, message_id)
+        else:
+            correction = await repo.get_last_correction(user.id)
         if not correction:
             try:
                 await callback.answer("Нет ошибок")

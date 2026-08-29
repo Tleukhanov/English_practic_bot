@@ -80,11 +80,12 @@ def diagnostic_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def reveal_keyboard() -> InlineKeyboardMarkup:
+def reveal_keyboard(message_id: int = 0) -> InlineKeyboardMarkup:
     """Кнопка «Показать ошибку» — мягкий фидбек вместо вываливания всех ошибок сразу."""
+    data = f"practice:reveal:{message_id}" if message_id else "practice:reveal"
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 Показать ошибку", callback_data="practice:reveal")],
+            [InlineKeyboardButton(text="🔍 Показать ошибку", callback_data=data)],
         ]
     )
 
