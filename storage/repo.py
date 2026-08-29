@@ -303,3 +303,11 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_leaderboard(self, limit: int = 20) -> list[LeaderboardRow]: ...
+
+    # ---------- достижения ----------
+
+    @abstractmethod
+    async def get_shown_achievements(self, user_id: int) -> list[str]: ...
+
+    @abstractmethod
+    async def save_shown_achievements(self, user_id: int, achievement_ids: list[str]) -> None: ...

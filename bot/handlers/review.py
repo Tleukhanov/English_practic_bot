@@ -17,6 +17,7 @@ from aiogram.types import CallbackQuery, Message
 from core.srs import SRSService
 from storage.repo import Repository
 
+from ..achievements import announce_new_achievements
 from ..keyboards import main_menu
 
 router = Router()
@@ -172,15 +173,4 @@ async def on_review_answer(message: Message, repo: Repository, srs: SRSService, 
             f"Выучено: {final_stats['learned']}/{final_stats['total']}",
             reply_markup=main_menu(),
         )
-        from core.achievements import check_achievements
-        from core.progress import ProgressService
-        progress_svc = ProgressService(repo)
-        progress = await progress_svc.get_progress(user.id, level=user.level)
-        achievements = check_achievements(progress)
-        earned = [a for a in achievements if a.earned]
-        if earned:
-            ach_text = "\n".join(f"{a.emoji} {a.name}" for a in earned[:3])
-            await message.answer(
-                f"<b>Ваши достижения!</b>\n\n{ach_text}",
-                reply_markup=main_menu(),
-            )
+        await announce_new_achievements(message, user, repo, reply_markup=main_menu())

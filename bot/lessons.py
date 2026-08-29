@@ -18,7 +18,6 @@ from aiogram.types import CallbackQuery, Message
 
 from core.characters import character_prompt
 from core.lesson_notes import LessonNoteService
-from core.progress import ProgressService
 from core.srs import SRSService
 from core.lessons import (
     LESSON_STEPS,
@@ -32,6 +31,7 @@ from storage.repo import LessonNote, Repository, TopicProposal, UserProfile
 from .formatters import format_lesson_note, format_lesson_step
 from .keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu, topic_proposals_keyboard
 from .utils import escape
+from .achievements import announce_new_achievements
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -294,17 +294,7 @@ async def cb_lesson_next(
             await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
             await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
 
-            from core.achievements import check_achievements
-            progress_svc = ProgressService(repo)
-            progress = await progress_svc.get_progress(user.id, level=user.level)
-            achievements = check_achievements(progress)
-            earned = [a for a in achievements if a.earned]
-            if earned:
-                ach_text = "\n".join(f"{a.emoji} {a.name}" for a in earned[:3])
-                await callback.message.answer(
-                    f"<b>Ваши достижения!</b>\n\n{ach_text}",
-                    reply_markup=main_menu(),
-                )
+            await announce_new_achievements(callback.message, user, repo, reply_markup=main_menu())
             return
 
         await repo.update_lesson(session.id, step=new_step, task_index=new_task_index)

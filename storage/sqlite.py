@@ -181,6 +181,14 @@ class SQLiteRepository(Repository):
             )
         """)
 
+        await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_achievements (
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                achievement_id TEXT NOT NULL,
+                PRIMARY KEY (user_id, achievement_id)
+            )
+        """)
+
     async def close(self) -> None:
         if self._conn is not None:
             await self._conn.close()
@@ -884,6 +892,24 @@ class SQLiteRepository(Repository):
                 streak_days=streak,
             ))
         return result
+
+    async def get_shown_achievements(self, user_id: int) -> list[str]:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT achievement_id FROM user_achievements WHERE user_id = ?",
+            (user_id,),
+        )
+        return [row["achievement_id"] for row in await cursor.fetchall()]
+
+    async def save_shown_achievements(self, user_id: int, achievement_ids: list[str]) -> None:
+        conn = self._require_conn()
+        await conn.execute("DELETE FROM user_achievements WHERE user_id = ?", (user_id,))
+        for aid in achievement_ids:
+            await conn.execute(
+                "INSERT OR IGNORE INTO user_achievements (user_id, achievement_id) VALUES (?, ?)",
+                (user_id, aid),
+            )
+        await conn.commit()
 
     async def _calc_streak(self, user_id: int) -> int:
         """Считает стрик (дни подряд) для пользователя."""

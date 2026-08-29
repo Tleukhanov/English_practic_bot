@@ -251,3 +251,20 @@ async def test_topic_proposals_replaces_on_resave(repo):
     all_notes = await repo.get_topic_proposals(user.id)
     assert len(all_notes) == 1
     assert all_notes[0].topic == "C"
+
+
+async def test_shown_achievements_roundtrip(repo):
+    user = await repo.get_or_create_user(300)
+    assert await repo.get_shown_achievements(user.id) == []
+    await repo.save_shown_achievements(user.id, ["first_lesson", "xp_100"])
+    assert set(await repo.get_shown_achievements(user.id)) == {"first_lesson", "xp_100"}
+    await repo.save_shown_achievements(user.id, ["streak_3"])
+    assert await repo.get_shown_achievements(user.id) == ["streak_3"]
+
+
+async def test_user_message_by_id_returns_only_failed_phrase(repo):
+    user = await repo.get_or_create_user(400)
+    first = await repo.add_user_message(user.id, "I good", is_correct=False, corrected_text="I am good")
+    await repo.add_user_message(user.id, "Perfect now", is_correct=True, corrected_text="Perfect now.")
+    assert await repo.get_user_message(user.id, first) is not None
+    assert (await repo.get_user_message(user.id, first))["corrected_text"] == "I am good"
