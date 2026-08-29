@@ -122,8 +122,19 @@ def parse_practice_response(raw: str) -> PracticeResult:
             )
         )
 
+    has_issues = len(issues) > 0
+    raw_flag = payload.get("is_correct")
+    # Issues и is_correct=True противоречат друг другу (нарушение схемы). Issues
+    # сильнее: если есть разбор ошибок — фраза не может считаться правильной.
+    if has_issues:
+        is_correct = False
+    elif raw_flag is None:
+        is_correct = True
+    else:
+        is_correct = bool(raw_flag)
+
     return PracticeResult(
-        is_correct=bool(payload.get("is_correct", not issues)),
+        is_correct=is_correct,
         corrected_text=str(payload.get("corrected_text", "")).strip(),
         issues=issues,
         next_question=str(payload.get("next_question", "")).strip(),

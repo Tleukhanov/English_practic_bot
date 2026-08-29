@@ -50,6 +50,18 @@ def test_parse_missing_optional_fields_uses_defaults():
     assert result.spoken_reply == ""
 
 
+def test_parse_issues_force_incorrect_even_if_is_correct_missing():
+    raw = '{"corrected_text": "X", "issues": [{"problem": "ошибка"}]}'
+    result = parse_practice_response(raw)
+    assert result.is_correct is False
+
+
+def test_parse_issues_override_contradictory_is_correct_true():
+    raw = '{"is_correct": true, "corrected_text": "X", "issues": [{"problem": "ошибка"}]}'
+    result = parse_practice_response(raw)
+    assert result.is_correct is False
+
+
 def test_parse_issue_without_all_fields():
     raw = '{"is_correct": false, "corrected_text": "X", "issues": [{"problem": "ошибка"}], "next_question": "?"}'
     result = parse_practice_response(raw)
