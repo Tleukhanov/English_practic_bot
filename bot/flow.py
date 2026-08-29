@@ -74,9 +74,21 @@ async def get_or_create_user(message: Message, repo: Repository) -> UserRow:
     )
 
 
+# Сериализуем фоновые обновления профиля: два параллельных перезаписывают друг друга
+# из устаревших снапшотов (last-write-wins теряет данные).
+_PROFILE_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+def _profile_lock(user_id: int) -> asyncio.Lock:
+    lock = _PROFILE_LOCKS.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PROFILE_LOCKS[user_id] = lock
+    return lock
+
+
 async def _update_profile_background(
     user_id: int,
-    previous: UserProfile | None,
     history: list[dict[str, str]],
     text: str,
     repo: Repository,
@@ -84,13 +96,17 @@ async def _update_profile_background(
 ) -> None:
     """Фоновое обновление профиля пользователя (Фаза 4).
 
-    Не должен ронять основной поток: ошибки только логируются.
+    Базой для диффа берём профиль на МОМЕНТ запуска задачи (свежий), а не
+    снапшот на момент реплики. Лок на юзера не даёт гонкам перезаписать друг друга.
+    Ошибки не роняют основной поток.
     """
     try:
-        dialogue = history + [{"role": "user", "content": text}]
-        updated = await profile_service.update(user_id, previous, dialogue)
-        await repo.save_profile(updated)
-        logger.info("Профиль обновлён: user=%s", user_id)
+        async with _profile_lock(user_id):
+            previous = await repo.get_profile(user_id)
+            dialogue = history + [{"role": "user", "content": text}]
+            updated = await profile_service.update(user_id, previous, dialogue)
+            await repo.save_profile(updated)
+            logger.info("Профиль обновлён: user=%s", user_id)
     except Exception:
         logger.exception("Не удалось обновить профиль пользователя %s", user_id)
 
@@ -113,6 +129,10 @@ async def run_practice(
     """
     user = await get_or_create_user(message, repo)
     profile = await repo.get_profile(user.id)
+    # Профиль должен существовать, иначе новичок потеряет и интересы, и слабые места.
+    if profile is None:
+        profile = UserProfile(user_id=user.id)
+        await repo.save_profile(profile)
     snippet = to_profile_snippet(profile) or None
     char_prompt = character_prompt(profile.character if profile else "")
     history = await repo.get_history(user.id, settings.max_context_messages)
@@ -145,7 +165,7 @@ async def run_practice(
 
     if profile_service is not None and profile_update_due(profile):
         asyncio.create_task(
-            _update_profile_background(user.id, profile, history, text, repo, profile_service)
+            _update_profile_background(user.id, history, text, repo, profile_service)
         )
 
     return PracticeTurn(reply=reply, result=result, message_id=msg_id)
