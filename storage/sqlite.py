@@ -665,17 +665,6 @@ class SQLiteRepository(Repository):
         await conn.execute("DELETE FROM topic_proposals WHERE user_id = ?", (user_id,))
         await conn.commit()
 
-    async def get_topic_proposals(self, user_id: int) -> list[TopicProposal]:
-        conn = self._require_conn()
-        cursor = await conn.execute(
-            "SELECT topic, description FROM topic_proposals WHERE user_id = ? ORDER BY id",
-            (user_id,),
-        )
-        return [
-            TopicProposal(topic=row["topic"], description=row["description"])
-            for row in await cursor.fetchall()
-        ]
-
     async def get_practice_dates(self, user_id: int, limit: int = 50) -> list[str]:
         """Возвращает уникальные даты (YYYY-MM-DD) последних практик пользователя."""
         conn = self._require_conn()
@@ -895,7 +884,7 @@ class SQLiteRepository(Repository):
             return 0
 
         from datetime import datetime, timedelta
-        today = datetime.now().date()
+        today = datetime.now(timezone.utc).date()
         streak = 0
         expected = today
 
