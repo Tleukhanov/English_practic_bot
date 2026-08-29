@@ -44,18 +44,24 @@ class RetentionService:
     async def get_retention_info(self, user_id: int) -> RetentionInfo:
         """Собирает информацию для напоминания."""
         notes = await self._repo.get_lesson_notes(user_id, limit=10)
+        practice_dates = await self._repo.get_practice_dates(user_id, limit=50)
 
         weak_areas = ProgressService._get_weak_areas(notes) if notes else []
         recent_topics = [n.topic for n in notes[:3] if n.topic] if notes else []
 
+        # Активность считаем по ВСЕМ действиям (реплики свободной практики +
+        # завершённые уроки), иначе тот, кто каждый день пишет в чат, никогда
+        # не получит напоминание — last_practice_hours будет None.
         last_practice_hours = None
-        if notes and notes[0].created_at:
+        last_activity = await self._repo.get_last_activity(user_id)
+        dt = _parse_created_at(last_activity) if last_activity else None
+        if dt is None and notes and notes[0].created_at:
             dt = _parse_created_at(notes[0].created_at)
-            if dt:
-                delta = datetime.now(timezone.utc) - dt
-                last_practice_hours = int(delta.total_seconds() // 3600)
+        if dt:
+            delta = datetime.now(timezone.utc) - dt
+            last_practice_hours = int(delta.total_seconds() // 3600)
 
-        streak = ProgressService._get_streak(notes) if notes else 0
+        streak = ProgressService._get_streak(notes, practice_dates) if notes else 0
 
         return RetentionInfo(
             last_practice_hours=last_practice_hours,

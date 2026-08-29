@@ -5,9 +5,16 @@ from core.scheduler import _build_reminder_message
 from core.retention import RetentionInfo
 
 
-def test_build_reminder_no_lessons():
-    info = RetentionInfo(total_lessons=0)
+def test_build_reminder_no_activity():
+    info = RetentionInfo(total_lessons=0, last_practice_hours=None)
     assert _build_reminder_message("Anna", info) is None
+
+
+def test_build_reminder_for_free_chat_user_without_lessons():
+    info = RetentionInfo(total_lessons=0, last_practice_hours=36)
+    msg = _build_reminder_message("Anna", info)
+    assert msg is not None
+    assert "36" in msg
 
 
 def test_build_reminder_no_practice_time():

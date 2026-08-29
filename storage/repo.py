@@ -264,6 +264,9 @@ class Repository(ABC):
     @abstractmethod
     async def get_practice_dates(self, user_id: int, limit: int = 50) -> list[str]: ...
 
+    @abstractmethod
+    async def get_last_activity(self, user_id: int) -> str | None: ...
+
     # ---------- слабые области (Фаза 13) ----------
 
     @abstractmethod

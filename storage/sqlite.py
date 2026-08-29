@@ -702,6 +702,28 @@ class SQLiteRepository(Repository):
         )
         return [row["day"] for row in await cursor.fetchall()]
 
+    async def get_last_activity(self, user_id: int) -> str | None:
+        """Последняя активность (ISO) по сообщениям пользователя и заметкам уроков."""
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT created_at FROM messages WHERE user_id = ? AND role = 'user' "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        best = row["created_at"] if row else None
+        cursor = await conn.execute(
+            "SELECT created_at FROM lesson_notes WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        note = row["created_at"] if row else None
+        if best is None:
+            return note
+        if note is None:
+            return best
+        return best if best >= note else note
+
     # ---------- weak areas (Фаза 13) ----------
 
     async def get_weak_areas(self, user_id: int) -> list[WeakArea]:

@@ -268,3 +268,13 @@ async def test_user_message_by_id_returns_only_failed_phrase(repo):
     await repo.add_user_message(user.id, "Perfect now", is_correct=True, corrected_text="Perfect now.")
     assert await repo.get_user_message(user.id, first) is not None
     assert (await repo.get_user_message(user.id, first))["corrected_text"] == "I am good"
+
+
+async def test_last_activity_covers_messages_and_notes(repo):
+    user = await repo.get_or_create_user(500)
+    assert await repo.get_last_activity(user.id) is None
+    await repo.add_user_message(user.id, "Hi", is_correct=True)
+    assert await repo.get_last_activity(user.id) is not None
+    note = LessonNote(user_id=user.id, topic="T")
+    await repo.add_lesson_note(note)
+    assert await repo.get_last_activity(user.id) is not None

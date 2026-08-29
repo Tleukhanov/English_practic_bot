@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 def _build_reminder_message(name: str, info) -> str | None:
     """Строит текст напоминания для пользователя."""
-    if info.total_lessons == 0 or info.last_practice_hours is None:
+    if info.last_practice_hours is None:
         return None
 
     if info.last_practice_hours < 24:
@@ -52,7 +52,7 @@ async def check_and_send_reminders(bot: Bot, repo: Repository) -> None:
     sent = 0
     for user in users:
         try:
-            info = await retention_service.get_retention_info(user.tg_id)
+            info = await retention_service.get_retention_info(user.id)
             name = user.first_name or "друг"
             message = _build_reminder_message(name, info)
 
