@@ -8,6 +8,7 @@ from bot.handlers.interests import (
     _parse_interests,
     _format_interests,
     PREDEFINED_INTERESTS,
+    ONBOARDING_INTEREST_BY_CODE,
 )
 from core.lessons import _render_proposals_prompt
 
@@ -35,8 +36,19 @@ def test_format_sorted():
     assert result == "Games, Music, Sports"
 
 
+def test_format_on_plain_string_does_not_split_characters():
+    result = _format_interests(_parse_interests("Games, Music"))
+    assert result == "Games, Music"
+
+
+def test_onboarding_codes_map_to_known_names():
+    for code, name in ONBOARDING_INTEREST_BY_CODE.items():
+        known = {n for _, n in PREDEFINED_INTERESTS}
+        assert name in known, f"code={code!r} -> {name!r} отсутствует в /interests"
+
+
 def test_predefined_interests_count():
-    assert len(PREDEFINED_INTERESTS) == 12
+    assert len(PREDEFINED_INTERESTS) == 13
 
 
 def test_predefined_interests_unique_names():

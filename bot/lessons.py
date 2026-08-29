@@ -27,7 +27,7 @@ from core.lessons import (
     lesson_content_to_json,
 )
 from core.profile import merge_weak_areas, to_profile_snippet
-from storage.repo import LessonNote, Repository, TopicProposal
+from storage.repo import LessonNote, Repository, TopicProposal, UserProfile
 
 from .formatters import format_lesson_note, format_lesson_step
 from .keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu, topic_proposals_keyboard
@@ -92,7 +92,7 @@ async def _merge_note_into_profile(repo: Repository, user_id: int, content, note
     try:
         profile = await repo.get_profile(user_id)
         if profile is None:
-            return
+            profile = UserProfile(user_id=user_id)
         grammar_rule = content.grammar.rule if content.grammar else ""
         new_weak = await merge_weak_areas(profile, grammar_rule, note.mistakes, repo=repo)
         if new_weak != profile.weak_areas:
@@ -259,61 +259,61 @@ async def cb_lesson_next(
             await callback.answer()
             return
         await state.set_state(LessonNav.processing)
+    try:
+        user = await repo.get_or_create_user(
+            callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+        )
+        session = await repo.get_active_lesson(user.id)
+        if session is None:
+            await callback.answer("Урок уже завершён")
+            return
+        await callback.answer()
 
-    user = await repo.get_or_create_user(
-        callback.from_user.id,
-        username=callback.from_user.username,
-        first_name=callback.from_user.first_name,
-    )
-    session = await repo.get_active_lesson(user.id)
-    if session is None:
-        await callback.answer("Урок уже завершён")
-        return
-    await callback.answer()
+        content = lesson_content_from_json(session.content_json)
+        step_name = LESSON_STEPS[session.step]
 
-    content = lesson_content_from_json(session.content_json)
-    step_name = LESSON_STEPS[session.step]
-
-    # Внутри шага "tasks" перебираем задания по одному.
-    if step_name == "tasks" and session.task_index + 1 < len(content.tasks):
-        await repo.update_lesson(session.id, task_index=session.task_index + 1)
-        session.task_index += 1
-        text = format_lesson_step("tasks", content, session.task_index)
-        if state:
-            await state.clear()
-        await callback.message.edit_text(text, reply_markup=lesson_keyboard())
-        return
-
-    new_step, new_task_index, finished = next_lesson_position(session.step, session.task_index, len(content.tasks))
-    if finished:
-        await callback.message.bot.send_chat_action(callback.message.chat.id, action="typing")
-        note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
-        await repo.finish_active_lessons(user.id)
-        await _merge_note_into_profile(repo, user.id, content, note)
-        await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
-        if state:
-            await state.clear()
-        await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
-
-        from core.achievements import check_achievements
-        progress_svc = ProgressService(repo)
-        progress = await progress_svc.get_progress(user.id, level=user.level)
-        achievements = check_achievements(progress)
-        earned = [a for a in achievements if a.earned]
-        if earned:
-            ach_text = "\n".join(f"{a.emoji} {a.name}" for a in earned[:3])
-            await callback.message.answer(
-                f"<b>Ваши достижения!</b>\n\n{ach_text}",
-                reply_markup=main_menu(),
+        # Внутри шага "tasks" перебираем задания по одному.
+        if step_name == "tasks" and session.task_index + 1 < len(content.tasks):
+            await repo.update_lesson(session.id, task_index=session.task_index + 1)
+            session.task_index += 1
+            await callback.message.edit_text(
+                format_lesson_step("tasks", content, session.task_index),
+                reply_markup=lesson_keyboard(),
             )
-        return
+            return
 
-    await repo.update_lesson(session.id, step=new_step, task_index=new_task_index)
-    text = format_lesson_step(LESSON_STEPS[new_step], content, new_task_index)
-    kb = lesson_recap_keyboard() if LESSON_STEPS[new_step] == "recap" else lesson_keyboard()
-    if state:
-        await state.clear()
-    await callback.message.edit_text(text, reply_markup=kb)
+        new_step, new_task_index, finished = next_lesson_position(session.step, session.task_index, len(content.tasks))
+        if finished:
+            # Завершаем урок ДО генерации заметки: повторный тап не создаст дубль.
+            await repo.finish_active_lessons(user.id)
+            await callback.message.bot.send_chat_action(callback.message.chat.id, action="typing")
+            note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
+            await _merge_note_into_profile(repo, user.id, content, note)
+            await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
+            await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
+
+            from core.achievements import check_achievements
+            progress_svc = ProgressService(repo)
+            progress = await progress_svc.get_progress(user.id, level=user.level)
+            achievements = check_achievements(progress)
+            earned = [a for a in achievements if a.earned]
+            if earned:
+                ach_text = "\n".join(f"{a.emoji} {a.name}" for a in earned[:3])
+                await callback.message.answer(
+                    f"<b>Ваши достижения!</b>\n\n{ach_text}",
+                    reply_markup=main_menu(),
+                )
+            return
+
+        await repo.update_lesson(session.id, step=new_step, task_index=new_task_index)
+        text = format_lesson_step(LESSON_STEPS[new_step], content, new_task_index)
+        kb = lesson_recap_keyboard() if LESSON_STEPS[new_step] == "recap" else lesson_keyboard()
+        await callback.message.edit_text(text, reply_markup=kb)
+    finally:
+        if state:
+            await state.clear()
 
 
 @router.callback_query(F.data == "lesson:repeat")
@@ -340,22 +340,34 @@ async def cb_lesson_end(
     repo: Repository,
     note_service: LessonNoteService,
     srs: SRSService = None,
+    state: FSMContext = None,
 ) -> None:
-    user = await repo.get_or_create_user(
-        callback.from_user.id,
-        username=callback.from_user.username,
-        first_name=callback.from_user.first_name,
-    )
-    session = await repo.get_active_lesson(user.id)
-    if session is None:
-        await callback.answer("Урок уже завершён")
-        return
-    await callback.answer()
+    if state:
+        current = await state.get_state()
+        if current and "LessonNav" in current:
+            await callback.answer()
+            return
+        await state.set_state(LessonNav.processing)
+    try:
+        user = await repo.get_or_create_user(
+            callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+        )
+        session = await repo.get_active_lesson(user.id)
+        if session is None:
+            await callback.answer("Урок уже завершён")
+            return
+        await callback.answer()
 
-    content = lesson_content_from_json(session.content_json)
-    await callback.message.bot.send_chat_action(callback.message.chat.id, action="typing")
-    note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
-    await repo.finish_active_lessons(user.id)
-    await _merge_note_into_profile(repo, user.id, content, note)
-    await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
-    await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
+        content = lesson_content_from_json(session.content_json)
+        # Завершаем урок ДО генерации заметки: повторный тап не создаст дубль.
+        await repo.finish_active_lessons(user.id)
+        await callback.message.bot.send_chat_action(callback.message.chat.id, action="typing")
+        note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
+        await _merge_note_into_profile(repo, user.id, content, note)
+        await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
+        await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
+    finally:
+        if state:
+            await state.clear()

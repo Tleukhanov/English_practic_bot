@@ -29,10 +29,26 @@ PREDEFINED_INTERESTS = [
     ("✈️", "Travel"),
     ("📚", "Science"),
     ("🎨", "Art / Design"),
+    ("💼", "Career"),
     ("🏋️", "Fitness"),
     ("🎲", "Board Games / Chess"),
     ("🐾", "Animals / Nature"),
 ]
+
+# Коды интересов онбординга -> названия в словаре /interests.
+# Онбординг не должен перезаписывать интересы, а только добавлять.
+ONBOARDING_INTEREST_BY_CODE = {
+    "career": "Career",
+    "movies": "Movies / Anime",
+    "games": "Games",
+    "travel": "Travel",
+    "tech": "Programming / AI",
+    "science": "Science",
+    "music": "Music",
+    "sports": "Sports",
+    "cooking": "Cooking",
+    "art": "Art / Design",
+}
 
 
 def _parse_interests(raw: str) -> set[str]:
@@ -66,7 +82,7 @@ def _interests_keyboard(current: str) -> InlineKeyboardMarkup:
 async def cmd_interests(message: Message, repo: Repository) -> None:
     user = await repo.get_or_create_user(message.from_user.id)
     profile = await repo.get_profile(user.id)
-    current = _format_interests(profile.interests if profile else "")
+    current = _format_interests(_parse_interests(profile.interests if profile else ""))
 
     text = (
         "🎯 <b>Выбери свои интересы:</b>\n\n"
@@ -115,7 +131,7 @@ async def cb_interests_done(callback: CallbackQuery, repo: Repository) -> None:
         first_name=callback.from_user.first_name,
     )
     profile = await repo.get_profile(user.id)
-    current = _format_interests(profile.interests if profile else "")
+    current = _format_interests(_parse_interests(profile.interests if profile else ""))
 
     if current:
         text = f"🎯 Интересы сохранены: <b>{current}</b>\n\nТеперь уроки будут строиться вокруг этих тем."

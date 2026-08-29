@@ -9,13 +9,15 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery
 
-from storage.repo import Repository
+from core.lessons import LessonService
+from storage.repo import Repository, UserProfile
 
-from ..keyboards import main_menu
+from .interests import ONBOARDING_INTEREST_BY_CODE, _format_interests, _parse_interests
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -97,7 +99,7 @@ async def cb_onb_level(callback: CallbackQuery, repo: Repository) -> None:
         first_name=callback.from_user.first_name,
     )
     if code != "skip":
-        await repo.upsert_user(user.id, level=code)
+        await repo.set_level(user.id, level=code)
         logger.info("Onboarding: user=%s level=%s", user.id, code)
     await callback.message.edit_text(
         _interests_text(),
@@ -106,14 +108,16 @@ async def cb_onb_level(callback: CallbackQuery, repo: Repository) -> None:
 
 
 @router.callback_query(F.data.startswith("onb:interest:"))
-async def cb_onb_interest(callback: CallbackQuery, repo: Repository) -> None:
+async def cb_onb_interest(
+    callback: CallbackQuery,
+    repo: Repository,
+    lesson_service: LessonService,
+) -> None:
     code = callback.data.split(":")[-1]
     if code == "done":
         await callback.answer()
         await callback.message.edit_text(_done_text())
         from bot.lessons import _start_lesson
-        from core.lessons import LessonService
-        lesson_service = LessonService(repo)
         await _start_lesson(callback.message, repo, lesson_service, None, callback.from_user)
         return
 
@@ -123,13 +127,17 @@ async def cb_onb_interest(callback: CallbackQuery, repo: Repository) -> None:
         first_name=callback.from_user.first_name,
     )
     profile = await repo.get_profile(user.id)
-    current = profile.interests if profile else ""
-    if code not in current:
-        new_interests = f"{current},{code}".strip(",") if current else code
-        if profile:
-            profile.interests = new_interests
-            await repo.save_profile(profile)
-        logger.info("Onboarding: user=%s interest=%s", user.id, code)
+    if profile is None:
+        profile = UserProfile(user_id=user.id)
+
+    name = ONBOARDING_INTEREST_BY_CODE.get(code, code)
+    selected = _parse_interests(profile.interests)
+    if name not in selected:
+        selected.add(name)
+        profile.interests = _format_interests(selected)
+        profile.updated_at = datetime.now(timezone.utc).isoformat()
+        await repo.save_profile(profile)
+        logger.info("Onboarding: user=%s interest=%s", user.id, name)
         await callback.answer("✅ Добавлено!", show_alert=False)
     else:
         await callback.answer("Уже выбрано", show_alert=False)
