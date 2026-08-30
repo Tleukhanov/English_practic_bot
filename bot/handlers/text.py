@@ -18,6 +18,8 @@ from core.practice import PracticeService
 from core.profile import ProfileService
 from storage.repo import Repository
 
+from ..quota import QuotaGuard
+
 from core.lessons import LESSON_STEPS
 from ..diagnostic import process_diagnostic_answer
 from ..flow import answer_practice, get_or_create_user
@@ -37,6 +39,7 @@ async def on_text(
     profile_service: ProfileService,
     settings: Settings,
     state: FSMContext,
+    quota: QuotaGuard | None = None,
 ) -> None:
     text = message.text.strip()
 
@@ -52,7 +55,7 @@ async def on_text(
         return
 
     user = await get_or_create_user(message, repo)
-    if await process_diagnostic_answer(message, repo, diagnostic_service, text):
+    if await process_diagnostic_answer(message, repo, diagnostic_service, text, quota=quota):
         return
 
     session = await repo.get_active_lesson(user.id)
@@ -80,7 +83,8 @@ async def on_text(
         await answer_practice(
             message, repo, practice, settings, text,
             reply_markup=kb, profile_service=profile_service, lesson_id=session.id,
+            quota=quota,
         )
         return
 
-    await answer_practice(message, repo, practice, settings, text, profile_service=profile_service)
+    await answer_practice(message, repo, practice, settings, text, profile_service=profile_service, quota=quota)

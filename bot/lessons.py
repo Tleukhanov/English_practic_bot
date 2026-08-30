@@ -33,6 +33,7 @@ from storage.repo import LessonNote, Repository, TopicProposal, UserProfile
 
 from .formatters import format_lesson_note, format_lesson_step, format_return_hook
 from .keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu, topic_proposals_keyboard
+from .quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 from .utils import escape
 from .achievements import announce_new_achievements
 
@@ -151,7 +152,7 @@ def _pick_lesson_type() -> str:
     return chosen
 
 
-async def _start_lesson(target, repo: Repository, lesson_service: LessonService, topic: str | None, user_from) -> None:
+async def _start_lesson(target, repo: Repository, lesson_service: LessonService, topic: str | None, user_from, quota: QuotaGuard | None = None) -> None:
     user = await repo.get_or_create_user(
         user_from.id,
         username=user_from.username,
@@ -169,6 +170,13 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
             "или нажми «⏹️ Завершить досрочно», затем возвращайся к уроку."
         )
         return
+
+    if quota is not None:
+        try:
+            await quota.consume(user.id)
+        except QuotaExceeded:
+            await target.answer(QUOTA_EXCEEDED_TEXT)
+            return
 
     status = await target.answer("⏳ Составляю структурированный урок...")
     try:
@@ -220,9 +228,9 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
 
 
 @router.message(Command("lesson"))
-async def cmd_lesson(message: Message, repo: Repository, lesson_service: LessonService) -> None:
+async def cmd_lesson(message: Message, repo: Repository, lesson_service: LessonService, quota: QuotaGuard | None = None) -> None:
     topic = message.text.removeprefix("/lesson").strip() or None
-    await _start_lesson(message, repo, lesson_service, topic, message.from_user)
+    await _start_lesson(message, repo, lesson_service, topic, message.from_user, quota)
 
 
 @router.callback_query(F.data.startswith("lesson:select_topic:"))
@@ -230,6 +238,7 @@ async def cb_select_topic(
     callback: CallbackQuery,
     repo: Repository,
     lesson_service: LessonService,
+    quota: QuotaGuard | None = None,
 ) -> None:
     user = await repo.get_or_create_user(
         callback.from_user.id,
@@ -244,6 +253,13 @@ async def cb_select_topic(
     selected = proposals[idx]
     await callback.answer()
     await repo.delete_topic_proposals(user.id)
+
+    if quota is not None:
+        try:
+            await quota.consume(user.id)
+        except QuotaExceeded:
+            await callback.message.answer(QUOTA_EXCEEDED_TEXT)
+            return
 
     status = await callback.message.answer("⏳ Составляю урок...")
     try:
@@ -273,9 +289,9 @@ async def cb_select_topic(
 
 
 @router.callback_query(F.data == "lesson_start")
-async def cb_lesson_start(callback: CallbackQuery, repo: Repository, lesson_service: LessonService) -> None:
+async def cb_lesson_start(callback: CallbackQuery, repo: Repository, lesson_service: LessonService, quota: QuotaGuard | None = None) -> None:
     await callback.answer()
-    await _start_lesson(callback.message, repo, lesson_service, None, callback.from_user)
+    await _start_lesson(callback.message, repo, lesson_service, None, callback.from_user, quota)
 
 
 @router.callback_query(F.data == "lesson:next")

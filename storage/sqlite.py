@@ -113,6 +113,13 @@ CREATE TABLE IF NOT EXISTS topic_proposals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_topic_proposals_user ON topic_proposals(user_id, id);
+
+CREATE TABLE IF NOT EXISTS llm_usage (
+    user_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+);
 """
 
 
@@ -139,6 +146,8 @@ class SQLiteRepository(Repository):
         columns = {row["name"] for row in rows}
         if "level" not in columns:
             await self._conn.execute("ALTER TABLE users ADD COLUMN level TEXT")
+        if "unlimited" not in columns:
+            await self._conn.execute("ALTER TABLE users ADD COLUMN unlimited INTEGER NOT NULL DEFAULT 0")
 
         cursor = await self._conn.execute("PRAGMA table_info(messages)")
         columns = {row["name"] for row in await cursor.fetchall()}
@@ -207,7 +216,7 @@ class SQLiteRepository(Repository):
     ) -> UserRow:
         conn = self._require_conn()
         cursor = await conn.execute(
-            "SELECT id, tg_id, username, first_name, level FROM users WHERE tg_id = ?",
+            "SELECT id, tg_id, username, first_name, level, unlimited FROM users WHERE tg_id = ?",
             (tg_id,),
         )
         row = await cursor.fetchone()
@@ -218,6 +227,7 @@ class SQLiteRepository(Repository):
                 username=row["username"],
                 first_name=row["first_name"],
                 level=row["level"],
+                is_unlimited=bool(row["unlimited"]),
             )
 
         cursor = await conn.execute(
@@ -237,6 +247,37 @@ class SQLiteRepository(Repository):
         cursor = await conn.execute("SELECT level FROM users WHERE id = ?", (user_id,))
         row = await cursor.fetchone()
         return row["level"] if row else None
+
+    # ---------- квота LLM ----------
+
+    async def get_unlimited_status(self, user_id: int) -> bool:
+        conn = self._require_conn()
+        cursor = await conn.execute("SELECT unlimited FROM users WHERE id = ?", (user_id,))
+        row = await cursor.fetchone()
+        return bool(row["unlimited"]) if row else False
+
+    async def set_unlimited_status(self, user_id: int, value: bool) -> None:
+        conn = self._require_conn()
+        await conn.execute("UPDATE users SET unlimited = ? WHERE id = ?", (1 if value else 0, user_id))
+        await conn.commit()
+
+    async def get_llm_usage(self, user_id: int, day: str) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT count FROM llm_usage WHERE user_id = ? AND day = ?",
+            (user_id, day),
+        )
+        row = await cursor.fetchone()
+        return row["count"] if row else 0
+
+    async def increment_llm_usage(self, user_id: int, day: str, inc: int = 1) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "INSERT INTO llm_usage (user_id, day, count) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id, day) DO UPDATE SET count = count + excluded.count",
+            (user_id, day, inc),
+        )
+        await conn.commit()
 
     async def get_profile(self, user_id: int) -> UserProfile | None:
         conn = self._require_conn()
@@ -849,7 +890,7 @@ class SQLiteRepository(Repository):
     async def get_all_users(self) -> list[UserRow]:
         conn = self._require_conn()
         cursor = await conn.execute(
-            "SELECT id, tg_id, username, first_name, level FROM users"
+            "SELECT id, tg_id, username, first_name, level, unlimited FROM users"
         )
         rows = await cursor.fetchall()
         return [
@@ -859,6 +900,7 @@ class SQLiteRepository(Repository):
                 username=row["username"],
                 first_name=row["first_name"],
                 level=row["level"],
+                is_unlimited=bool(row["unlimited"]),
             )
             for row in rows
         ]

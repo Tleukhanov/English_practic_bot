@@ -25,6 +25,7 @@ from storage.repo import Repository
 from .flow import get_or_create_user
 from .formatters import format_diagnostic_question, format_level_result
 from .keyboards import diagnostic_keyboard, main_menu
+from .quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -45,10 +46,21 @@ async def _assess_and_finish(
     repo: Repository,
     diagnostic_service: DiagnosticService,
     session,
+    quota: QuotaGuard | None = None,
 ) -> None:
     """Оценивает уровень по ответам, сохраняет его и закрывает сессию диагностики."""
     questions = diagnostic_tasks_from_json(session.questions_json)
     answers = _answers_of(session)
+    if quota is not None:
+        try:
+            await quota.consume(session.user_id)
+        except QuotaExceeded:
+            assessment = DiagnosticAssessment(level=estimate_level_heuristic(answers))
+            await repo.set_level(session.user_id, assessment.level)
+            await repo.finish_diagnostic(session.id)
+            await target.answer(format_level_result(assessment, estimated=True), reply_markup=main_menu())
+            logger.info("Уровень оценён эвристикой (лимит LLM): user=%s level=%s", session.user_id, assessment.level)
+            return
     try:
         assessment = await diagnostic_service.assess(questions, answers)
         estimated = False
@@ -79,6 +91,7 @@ async def process_diagnostic_answer(
     repo: Repository,
     diagnostic_service: DiagnosticService,
     text: str,
+    quota: QuotaGuard | None = None,
 ) -> bool:
     """Отвечает на задание диагностики, если она активна. True — сообщение ушло в диагностику."""
     user = await get_or_create_user(message, repo)
@@ -105,14 +118,14 @@ async def process_diagnostic_answer(
     questions = diagnostic_tasks_from_json(session.questions_json)
     answers = _answers_of(session)
     if len(answers) >= len(questions):
-        await _assess_and_finish(message, repo, diagnostic_service, session)
+        await _assess_and_finish(message, repo, diagnostic_service, session, quota=quota)
         return True
 
     await _show_next_task(message, repo, session)
     return True
 
 
-async def _start_diagnostic(target, repo: Repository, diagnostic_service: DiagnosticService, user_from) -> None:
+async def _start_diagnostic(target, repo: Repository, diagnostic_service: DiagnosticService, user_from, quota: QuotaGuard | None = None) -> None:
     user = await repo.get_or_create_user(
         user_from.id,
         username=user_from.username,
@@ -129,6 +142,13 @@ async def _start_diagnostic(target, repo: Repository, diagnostic_service: Diagno
             "затем пройди диагностику: /diagnostic"
         )
         return
+
+    if quota is not None:
+        try:
+            await quota.consume(user.id)
+        except QuotaExceeded:
+            await target.answer(QUOTA_EXCEEDED_TEXT)
+            return
 
     status = await target.answer("⏳ Составляю диагностические задания...")
     try:
@@ -150,14 +170,14 @@ async def _start_diagnostic(target, repo: Repository, diagnostic_service: Diagno
 
 
 @router.message(Command("diagnostic"))
-async def cmd_diagnostic(message: Message, repo: Repository, diagnostic_service: DiagnosticService) -> None:
-    await _start_diagnostic(message, repo, diagnostic_service, message.from_user)
+async def cmd_diagnostic(message: Message, repo: Repository, diagnostic_service: DiagnosticService, quota: QuotaGuard | None = None) -> None:
+    await _start_diagnostic(message, repo, diagnostic_service, message.from_user, quota)
 
 
 @router.callback_query(F.data == "diagnostic_start")
-async def cb_diagnostic_start(callback: CallbackQuery, repo: Repository, diagnostic_service: DiagnosticService) -> None:
+async def cb_diagnostic_start(callback: CallbackQuery, repo: Repository, diagnostic_service: DiagnosticService, quota: QuotaGuard | None = None) -> None:
     await callback.answer()
-    await _start_diagnostic(callback.message, repo, diagnostic_service, callback.from_user)
+    await _start_diagnostic(callback.message, repo, diagnostic_service, callback.from_user, quota)
 
 
 @router.callback_query(F.data == "diagnostic:skip")
@@ -165,6 +185,7 @@ async def cb_diagnostic_skip(
     callback: CallbackQuery,
     repo: Repository,
     diagnostic_service: DiagnosticService,
+    quota: QuotaGuard | None = None,
 ) -> None:
     user = await repo.get_or_create_user(
         callback.from_user.id,
@@ -180,7 +201,7 @@ async def cb_diagnostic_skip(
     questions = diagnostic_tasks_from_json(session.questions_json)
     answers = _answers_of(session)
     if len(answers) >= len(questions):
-        await _assess_and_finish(callback.message, repo, diagnostic_service, session)
+        await _assess_and_finish(callback.message, repo, diagnostic_service, session, quota=quota)
         return
     await _show_next_task(callback.message, repo, session)
 
@@ -190,6 +211,7 @@ async def cb_diagnostic_end(
     callback: CallbackQuery,
     repo: Repository,
     diagnostic_service: DiagnosticService,
+    quota: QuotaGuard | None = None,
 ) -> None:
     user = await repo.get_or_create_user(
         callback.from_user.id,
@@ -208,4 +230,4 @@ async def cb_diagnostic_end(
             reply_markup=main_menu(),
         )
         return
-    await _assess_and_finish(callback.message, repo, diagnostic_service, session)
+    await _assess_and_finish(callback.message, repo, diagnostic_service, session, quota=quota)

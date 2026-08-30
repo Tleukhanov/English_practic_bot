@@ -13,6 +13,7 @@ class UserRow:
     username: str | None = None
     first_name: str | None = None
     level: str | None = None  # CEFR: A1 | A2 | B1 | B2 | C1 | None
+    is_unlimited: bool = False  # промокодом снят дневной лимит LLM
 
 
 @dataclass
@@ -166,6 +167,20 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_level(self, user_id: int) -> str | None: ...
+
+    # ---------- квота LLM ----------
+
+    @abstractmethod
+    async def get_unlimited_status(self, user_id: int) -> bool: ...
+
+    @abstractmethod
+    async def set_unlimited_status(self, user_id: int, value: bool) -> None: ...
+
+    @abstractmethod
+    async def get_llm_usage(self, user_id: int, day: str) -> int: ...
+
+    @abstractmethod
+    async def increment_llm_usage(self, user_id: int, day: str, inc: int = 1) -> None: ...
 
     @abstractmethod
     async def get_profile(self, user_id: int) -> UserProfile | None: ...

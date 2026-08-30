@@ -26,6 +26,7 @@ from storage.sqlite import SQLiteRepository
 from .config import get_settings
 from .diagnostic import router as diagnostic_router
 from .flow import router as practice_router
+from .quota import QuotaGuard
 from .handlers import menu, profile, start, text, voice
 from .handlers.character import router as character_router
 from .handlers.interests import router as interests_router
@@ -34,6 +35,7 @@ from .handlers.achievements import router as achievements_router
 from .handlers.review import router as review_router
 from .handlers.onboarding import router as onboarding_router
 from .handlers.leaderboard import router as leaderboard_router
+from .handlers.promo import router as promo_router
 from .lessons import router as lessons_router
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,7 @@ COMMANDS = [
     BotCommand(command="leaderboard", description="🏅 Рейтинг"),
     BotCommand(command="reset", description="🔄 Сбросить состояние"),
     BotCommand(command="profile", description="🧠 Мой профиль"),
+    BotCommand(command="promo", description="🎟 Промокод на безлимит"),
     BotCommand(command="help", description="Помощь"),
 ]
 
@@ -101,6 +104,7 @@ async def main() -> None:
     dp["stt"] = stt
     dp["tts"] = tts
     dp["settings"] = settings
+    dp["quota"] = QuotaGuard(repo, settings.llm_daily_limit)
 
     dp.include_router(onboarding_router)
     dp.include_router(start.router)
@@ -115,6 +119,7 @@ async def main() -> None:
     dp.include_router(lessons_router)
     dp.include_router(diagnostic_router)
     dp.include_router(review_router)
+    dp.include_router(promo_router)
     dp.include_router(text.router)
     dp.include_router(voice.router)
 

@@ -26,6 +26,7 @@ from core.lessons import LESSON_STEPS
 from ..diagnostic import process_diagnostic_answer
 from ..flow import get_or_create_user, practice_markup, run_practice
 from ..keyboards import lesson_keyboard, lesson_recap_keyboard
+from ..quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 from ..utils import escape
 
 router = Router()
@@ -100,6 +101,7 @@ async def on_voice(
     diagnostic_service: DiagnosticService,
     profile_service: ProfileService,
     settings: Settings,
+    quota: QuotaGuard | None = None,
 ) -> None:
     voice = message.voice
     if voice.duration and voice.duration > settings.max_voice_duration_sec:
@@ -157,7 +159,7 @@ async def on_voice(
         await status.edit_text("🤷 Не расслышал слов. Попробуй говорить чётче и ближе к микрофону.")
         return
 
-    if await process_diagnostic_answer(message, repo, diagnostic_service, text):
+    if await process_diagnostic_answer(message, repo, diagnostic_service, text, quota=quota):
         return
 
     prefix = f"🎤 Вы сказали: <i>{escape(text)}</i>"
@@ -171,7 +173,11 @@ async def on_voice(
             prefix=prefix,
             profile_service=profile_service,
             lesson_id=session.id if session is not None else None,
+            quota=quota,
         )
+    except QuotaExceeded:
+        await status.edit_text(f"{prefix}\n\n{QUOTA_EXCEEDED_TEXT}")
+        return
     except PracticeParseError as exc:
         logger.warning("Не удалось разобрать ответ LLM: %s", exc)
         await status.edit_text(f"{prefix}\n\n🤔 Не смог разобрать ответ модели. Попробуй сформулировать ещё раз.")

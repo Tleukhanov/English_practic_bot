@@ -18,6 +18,7 @@ from core.profile import ProfileService, profile_update_due, to_profile_snippet
 from core.weak_areas import WeakAreaService
 from storage.repo import Repository, UserProfile, UserRow
 
+from .quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 from .formatters import format_practice_result, format_practice_soft, format_reveal
 from .keyboards import reveal_keyboard
 
@@ -121,13 +122,17 @@ async def run_practice(
     prefix: str = "",
     profile_service: ProfileService | None = None,
     lesson_id: int | None = None,
+    quota: QuotaGuard | None = None,
 ) -> PracticeTurn:
     """Проводит практику по переданному тексту, сохраняет в БД и возвращает ответ.
 
-    Поднимает исключение при сбое LLM — хэндлер решает, что показать пользователю.
+    Поднимает исключение при сбое LLM или исчерпании дневной квоты (QuotaExceeded) —
+    хэндлер решает, что показать пользователю.
     lesson_id — сессия урока, к которой относится реплика (для заметок урока, Фаза 5).
     """
     user = await get_or_create_user(message, repo)
+    if quota is not None:
+        await quota.consume(user.id)
     profile = await repo.get_profile(user.id)
     # Профиль должен существовать, иначе новичок потеряет и интересы, и слабые места.
     if profile is None:
@@ -182,6 +187,7 @@ async def answer_practice(
     reply_markup=None,
     profile_service: ProfileService | None = None,
     lesson_id: int | None = None,
+    quota: QuotaGuard | None = None,
 ) -> None:
     """Запускает практику и сама отвечает пользователю, обрабатывая ошибки LLM.
 
@@ -197,7 +203,11 @@ async def answer_practice(
             prefix=prefix,
             profile_service=profile_service,
             lesson_id=lesson_id,
+            quota=quota,
         )
+    except QuotaExceeded:
+        await message.answer(QUOTA_EXCEEDED_TEXT)
+        return
     except PracticeParseError as exc:
         logger.warning("Не удалось разобрать ответ LLM: %s", exc)
         await message.answer("🤔 Не смог разобрать ответ модели. Попробуй сформулировать ещё раз.")

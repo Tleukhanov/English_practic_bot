@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     max_context_messages: int = 6
     max_voice_duration_sec: int = 60
 
+    # Квота LLM на тестеров: дневной лимит LLM-действий на пользователя
+    # (0 = без лимита). Промокод снимает лимит пользователю навсегда.
+    llm_daily_limit: int = 30
+    promo_unlimited_code: str = ""
+
     @property
     def resolved_llm_base_url(self) -> str:
         preset = LLM_PRESETS.get(self.llm_provider, {})
