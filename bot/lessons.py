@@ -27,10 +27,11 @@ from core.lessons import (
     lesson_content_from_json,
     lesson_content_to_json,
 )
+from core.progress import ProgressService
 from core.profile import merge_weak_areas, to_profile_snippet
 from storage.repo import LessonNote, Repository, TopicProposal, UserProfile
 
-from .formatters import format_lesson_note, format_lesson_step
+from .formatters import format_lesson_note, format_lesson_step, format_return_hook
 from .keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu, topic_proposals_keyboard
 from .utils import escape
 from .achievements import announce_new_achievements
@@ -50,6 +51,22 @@ def _finished_text(content, note: LessonNote | None = None) -> str:
         parts.append("\n\n")
     parts.append("Загляни в /stats, чтобы увидеть свой прогресс. Хочешь новую тему? Жми /lesson!")
     return "".join(parts)
+
+
+async def _send_return_hook(callback: CallbackQuery, user, repo: Repository, srs) -> None:
+    """Крючок возврата после урока: стрик и очередь повторения."""
+    try:
+        progress = await ProgressService(repo).get_progress(user.id, level=user.level)
+        due_words = 0
+        if srs is not None:
+            try:
+                due_words = len(await srs.get_due_words(user.id, limit=100))
+            except Exception:
+                due_words = 0
+        text = format_return_hook(progress.streak_days, due_words)
+        await callback.message.answer(text)
+    except Exception:
+        logger.exception("Не удалось отправить крючок возврата user=%s", user.id)
 
 
 async def _create_lesson_note(
@@ -310,6 +327,7 @@ async def cb_lesson_next(
             await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
             await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
 
+            await _send_return_hook(callback, user, repo, srs)
             await announce_new_achievements(callback.message, user, repo, reply_markup=main_menu())
             return
 
@@ -374,6 +392,9 @@ async def cb_lesson_end(
         await _merge_note_into_profile(repo, user.id, content, note)
         await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
         await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
+
+        await _send_return_hook(callback, user, repo, srs)
+        await announce_new_achievements(callback.message, user, repo, reply_markup=main_menu())
     finally:
         if state:
             await state.clear()

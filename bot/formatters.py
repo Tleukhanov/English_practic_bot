@@ -264,6 +264,34 @@ def format_lesson_task(content: LessonContent, task_index: int) -> str:
     )
 
 
+def _plural_ru(count: int, one: str, few: str, many: str) -> str:
+    n = abs(count) % 100
+    n1 = n % 10
+    if 10 < n < 20:
+        return many
+    if 1 < n1 < 5:
+        return few
+    if n1 == 1:
+        return one
+    return many
+
+
+def format_return_hook(streak: int, due_words: int) -> str:
+    """Крючок возврата: мотивация продолжить серию и повторить слова."""
+    if streak >= 1:
+        days = _plural_ru(streak, "день", "дня", "дней")
+        line = (
+            f"🔥 Твоя серия: {streak} {days}. Приходи завтра и продли её — "
+            "пропустишь день, и серия сгорит."
+        )
+    else:
+        line = "🔥 Отличный шаг! Приходи завтра — первый день серии будет твоим."
+    if due_words:
+        words = _plural_ru(due_words, "слово", "слова", "слов")
+        line += f"\n\n📚 В очереди на повторение: {due_words} {words}. Жми /review."
+    return line
+
+
 def format_lesson_recap(content: LessonContent) -> str:
     parts = [_bold("🎉 Урок почти завершён!"), ""]
     parts.append(f"Тема: {escape(content.topic)}")

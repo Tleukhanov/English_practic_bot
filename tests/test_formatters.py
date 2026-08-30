@@ -13,6 +13,7 @@ from bot.formatters import (
     format_practice_result,
     format_practice_soft,
     format_profile,
+    format_return_hook,
     format_reveal,
     format_stats,
 )
@@ -219,6 +220,32 @@ def test_format_lesson_recap():
     assert "Travelling" in text
     assert "luggage" in text
     assert "Past Simple" in text
+
+
+def test_format_return_hook_with_streak_and_due():
+    text = format_return_hook(3, 5)
+    assert "3 дня" in text
+    assert "серия сгорит" in text
+    assert "5 слов" in text
+    assert "/review" in text
+
+
+def test_format_return_hook_streak_one_no_due():
+    text = format_return_hook(1, 0)
+    assert "1 день" in text
+    assert "слов" not in text.lower()
+
+
+def test_format_return_hook_no_streak_with_due():
+    text = format_return_hook(0, 2)
+    assert "Отличный шаг" in text
+    assert "2 слова" in text
+
+
+def test_format_return_hook_pluralization():
+    assert "11 слов" in format_return_hook(0, 11)
+    assert "21 слово" in format_return_hook(0, 21)
+    assert "5 дней" in format_return_hook(5, 0)
 
 
 def test_format_lesson_step_unknown_raises():
