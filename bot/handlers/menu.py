@@ -42,3 +42,26 @@ async def cb_stats(callback: CallbackQuery, repo: Repository) -> None:
 async def cb_help(callback: CallbackQuery) -> None:
     await callback.answer()
     await callback.message.answer(HELP_TEXT, reply_markup=main_menu())
+
+
+@router.callback_query(F.data == "exam_prep")
+async def cb_exam_prep(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await callback.message.answer(
+        "📚 <b>Подготовка к конкретному экзамену</b> — пока на доработке.\n\n"
+        "Готовится: IELTS, TOEFL, ОГЭ/ЕГЭ и собеседования — с таргетной лексикой "
+        "и форматом заданий под выбранный экзамен.\n"
+        "Выйдет в полноценной версии — следи за обновлениями! 🚀",
+        reply_markup=main_menu(),
+    )
+
+
+@router.callback_query(F.data == "contact_dev")
+async def cb_contact_dev(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await callback.message.answer(
+        "📮 <b>Связь с разработчиком:</b> @Napaleonwww\n\n"
+        "Пиши: что не работает, чего не хватает, какие ошибки заметил. "
+        "Отвечаю в течение дня.",
+        reply_markup=main_menu(),
+    )

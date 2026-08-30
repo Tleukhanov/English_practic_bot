@@ -5,44 +5,35 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
+def _base_menu_rows(due_words: int = 0) -> list[list[InlineKeyboardButton]]:
+    review_text = f"📖 Повторить слова ({due_words})" if due_words > 0 else "📖 Повторить слова"
+    return [
+        [InlineKeyboardButton(text="📚 Начать урок", callback_data="lesson_start")],
+        [InlineKeyboardButton(text=review_text, callback_data="review:start")],
+        [InlineKeyboardButton(text="🎯 Определить уровень", callback_data="diagnostic_start")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
+        [
+            InlineKeyboardButton(text="📈 Прогресс", callback_data="progress"),
+            InlineKeyboardButton(text="🏆 Достижения", callback_data="achievements"),
+            InlineKeyboardButton(text="🏅 Рейтинг", callback_data="leaderboard"),
+        ],
+        [
+            InlineKeyboardButton(text="📚 Подготовка к экзамену", callback_data="exam_prep"),
+            InlineKeyboardButton(text="📮 Связь с разработчиком", callback_data="contact_dev"),
+        ],
+        [InlineKeyboardButton(text="🧠 Мой профиль", callback_data="profile")],
+        [InlineKeyboardButton(text="🔄 Сброс", callback_data="reset")],
+        [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
+    ]
+
+
 def main_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📚 Начать урок", callback_data="lesson_start")],
-            [InlineKeyboardButton(text="📖 Повторить слова", callback_data="review:start")],
-            [InlineKeyboardButton(text="🎯 Определить уровень", callback_data="diagnostic_start")],
-            [InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
-            [
-                InlineKeyboardButton(text="📈 Прогресс", callback_data="progress"),
-                InlineKeyboardButton(text="🏆 Достижения", callback_data="achievements"),
-                InlineKeyboardButton(text="🏅 Рейтинг", callback_data="leaderboard"),
-            ],
-            [InlineKeyboardButton(text="🧠 Мой профиль", callback_data="profile")],
-            [InlineKeyboardButton(text="🔄 Сброс", callback_data="reset")],
-            [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
-        ]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=_base_menu_rows())
 
 
 def main_menu_with_srs(due_words: int = 0) -> InlineKeyboardMarkup:
     """Главное меню с указанием количества слов для повторения."""
-    review_text = f"📖 Повторить слова ({due_words})" if due_words > 0 else "📖 Повторить слова"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📚 Начать урок", callback_data="lesson_start")],
-            [InlineKeyboardButton(text=review_text, callback_data="review:start")],
-            [InlineKeyboardButton(text="🎯 Определить уровень", callback_data="diagnostic_start")],
-            [InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
-            [
-                InlineKeyboardButton(text="📈 Прогресс", callback_data="progress"),
-                InlineKeyboardButton(text="🏆 Достижения", callback_data="achievements"),
-                InlineKeyboardButton(text="🏅 Рейтинг", callback_data="leaderboard"),
-            ],
-            [InlineKeyboardButton(text="🧠 Мой профиль", callback_data="profile")],
-            [InlineKeyboardButton(text="🔄 Сброс", callback_data="reset")],
-            [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
-        ]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=_base_menu_rows(due_words))
 
 
 def lesson_keyboard() -> InlineKeyboardMarkup:
