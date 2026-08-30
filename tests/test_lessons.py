@@ -138,6 +138,67 @@ async def test_lesson_service_generates_and_parses():
     assert llm.last_temperature == 0.7
 
 
+class CallCountingLLM(LLMProvider):
+    def __init__(self, responses):
+        self.responses = responses
+        self.calls = 0
+        self.temperatures = []
+
+    async def chat(self, messages, temperature=None, **kwargs):
+        idx = min(self.calls, len(self.responses) - 1)
+        self.calls += 1
+        self.temperatures.append(temperature)
+        response = self.responses[idx]
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+async def test_generate_calls_three_llm_steps_in_order():
+    llm = CallCountingLLM(
+        [
+            '{"topic": "Cooking", "intro": "Let us cook!", "lesson_type": "standard"}',
+            '{"slides": ["Buy fresh herbs.", "Season lightly."]}',
+            '["Say your recipe.", "Name your favourite dish."]',
+        ]
+    )
+    content = await LessonService(llm).generate("Cooking")
+    assert llm.calls == 3
+    assert content.topic == "Cooking"
+    assert content.slides == ["Buy fresh herbs.", "Season lightly."]
+    assert content.tasks == ["Say your recipe.", "Name your favourite dish."]
+    assert content.lesson_type == "standard"
+    assert llm.temperatures == [0.7, 0.7, 0.7]
+
+
+async def test_generate_degrades_when_side_steps_fail():
+    llm = CallCountingLLM(
+        [
+            '{"topic": "Chess", "intro": "Play the game!", "lesson_type": "standard"}',
+            RuntimeError("slides step failed"),
+            '{"tasks": ["Explain your move.", "Describe the board."]}',
+        ]
+    )
+    content = await LessonService(llm).generate("Chess")
+    assert content.topic == "Chess"
+    assert content.slides == []
+    assert len(content.tasks) == 2
+    assert llm.calls == 3
+
+
+async def test_generate_keeps_core_slides_when_steps_empty():
+    llm = CallCountingLLM(
+        [
+            '{"topic": "Travelling", "intro": "Go!", "slides": ["Book early."], "tasks": ["Where to?"], "lesson_type": "standard"}',
+            '{"slides": []}',
+            '{"tasks": []}',
+        ]
+    )
+    content = await LessonService(llm).generate("Travelling")
+    assert content.slides == ["Book early."]
+    assert content.tasks == ["Where to?"]
+
+
 async def test_lesson_service_generates_with_lesson_type():
     llm = FakeLLM(VALID_LESSON_JSON.replace('"topic": "Travelling"', '"topic": "Travelling", "lesson_type": "story"'))
     service = LessonService(llm)

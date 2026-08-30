@@ -7,7 +7,9 @@ LessonService генерирует цельный мини-урок через L
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 
 from providers.base import LLMProvider
@@ -15,6 +17,7 @@ from providers.base import LLMProvider
 from .json_utils import extract_json, extract_json_list, JsonParseError
 
 LessonParseError = JsonParseError
+logger = logging.getLogger(__name__)
 
 LESSON_STEPS = ["intro", "vocabulary", "slides", "grammar", "tasks", "recap"]
 
@@ -75,11 +78,11 @@ class LessonContent:
     lesson_type: str = "standard"
 
 
-SYSTEM_PROMPT_TEMPLATE = """You are an English teacher creating a structured mini-lesson for a Russian-speaking learner at the __LEVEL_DESC__ level.
+CORE_SYSTEM_PROMPT = """You are an English teacher creating a structured mini-lesson for a Russian-speaking learner at the __LEVEL_DESC__ level.
 
 __LEVEL_RULES__
 
-Create ONE complete, engaging mini-lesson on the requested topic (if no topic given, pick an interesting everyday topic yourself).
+Create the CORE of a short engaging mini-lesson on the requested topic (if no topic given, pick an interesting everyday topic yourself).
 
 Respond ONLY with a single valid JSON object. No markdown, no extra text, no code fences.
 
@@ -91,26 +94,54 @@ JSON schema:
   "vocabulary": [
     {"word": "english word", "translation": "russian translation", "example": "short english example sentence"}
   ],
-  "slides": ["short key point in English", "...", "..."],
   "grammar": {
     "rule": "name of the grammar point, e.g. 'Past Simple'",
     "explanation_ru": "short explanation in Russian",
     "examples": ["english example sentence", "..."]
-  },
-  "tasks": ["a speaking task or question for the student in English", "..."]
+  }
 }
 
 Rules:
-- Keep the lesson SHORT and impactful: the student should finish it in about 3-5 minutes (quick read + 2-3 short answers).
-- vocabulary: 3 to 4 words with Russian translations and short examples.
-- slides: 2 to 3 concise bullet points that summarize the most useful ideas/words about the topic.
-- grammar: pick ONE simple grammar point naturally connected to the topic and suited to the student's level.
-- tasks: 2 to 3 short speaking tasks or questions the student should answer in English.
-- intro, slides, examples, tasks, words and their examples must be in ENGLISH.
+- Keep the lesson SHORT: vocabulary is exactly 3 to 4 words with Russian translations and short examples.
+- grammar: ONE simple grammar point naturally connected to the topic and suited to the student's level; give 1-2 examples.
+- intro, words and grammar examples must be in ENGLISH.
 - translations and explanation_ru must be in RUSSIAN.
 
 __LESSON_TYPE_RULES__
 """
+
+SLIDES_SYSTEM_PROMPT = """You are an English teacher. A student is taking a SHORT English lesson on the topic below. Now produce the "key ideas" part of that lesson.
+
+Respond ONLY with a single valid JSON object. No markdown, no extra text, no code fences.
+
+JSON schema:
+{ "slides": ["short English key point", "...", "..."] }
+
+Rules:
+- 2 to 3 concise bullet points in ENGLISH with the most useful ideas, facts or phrases about the topic.
+- Do NOT repeat the vocabulary list — give fresh, memorable points the student should remember.
+
+__LEVEL_RULES__
+__LESSON_TYPE_RULES__
+"""
+
+TASKS_SYSTEM_PROMPT = """You are an English teacher. A student is finishing a SHORT lesson on the topic below. Create the speaking tasks for it.
+
+Respond ONLY with a single valid JSON object. No markdown, no extra text, no code fences.
+
+JSON schema:
+{ "tasks": ["an English speaking task or question", "...", "..."] }
+
+Rules:
+- 2 to 3 short speaking tasks or questions in ENGLISH the student answers aloud.
+- Each task must be answerable in 1-3 sentences at the student's level.
+
+__LEVEL_RULES__
+__LESSON_TYPE_RULES__
+"""
+
+# Совместимость: прежний единый шаблон соответствует «ядру» урока.
+SYSTEM_PROMPT_TEMPLATE = CORE_SYSTEM_PROMPT
 
 LEVEL_DESCRIPTIONS = {
     None: "beginner (A1)",
@@ -132,6 +163,7 @@ LEVEL_RULES = {
 
 
 def _render_system_prompt(
+    body: str,
     level: str | None,
     profile: str | None = None,
     recent_topics: list[str] | None = None,
@@ -139,7 +171,7 @@ def _render_system_prompt(
     lesson_type: str = "standard",
 ) -> str:
     type_rules = LESSON_TYPES.get(lesson_type, LESSON_TYPES["standard"])
-    text = SYSTEM_PROMPT_TEMPLATE.replace(
+    text = body.replace(
         "__LEVEL_DESC__", LEVEL_DESCRIPTIONS.get(level, LEVEL_DESCRIPTIONS[None])
     ).replace(
         "__LEVEL_RULES__", LEVEL_RULES.get(level, "")
@@ -170,6 +202,22 @@ def _render_system_prompt(
     return text
 
 
+def _step_messages(system: str, user: str) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": system},
+        {
+            "role": "system",
+            "content": (
+                "CRITICAL FORMAT RULE — this overrides all other instructions: "
+                "Your response MUST be ONLY a single valid JSON object matching the schema above. "
+                "No markdown, no text outside JSON, no code fences, no bullet points, no emoji headers. "
+                "If you break this rule the student will see an error."
+            ),
+        },
+        {"role": "user", "content": user},
+    ]
+
+
 def build_lesson_prompt(
     topic: str | None,
     level: str | None = None,
@@ -179,19 +227,39 @@ def build_lesson_prompt(
     lesson_type: str = "standard",
 ) -> list[dict[str, str]]:
     user_message = f"Create a structured lesson. Topic: {topic}" if topic else "Create a structured lesson on an interesting topic of your choice."
-    return [
-        {"role": "system", "content": _render_system_prompt(level, profile, recent_topics, character_prompt, lesson_type)},
-        {
-            "role": "system",
-            "content": (
-                "CRITICAL FORMAT RULE — this overrides all other instructions: "
-                "Your response MUST be ONLY a single valid JSON object matching the schema in the system prompt. "
-                "No markdown, no text outside JSON, no code fences, no bullet points, no emoji headers. "
-                "If you break this rule the student will see an error."
-            ),
-        },
-        {"role": "user", "content": user_message},
-    ]
+    system = _render_system_prompt(CORE_SYSTEM_PROMPT, level, profile, recent_topics, character_prompt, lesson_type)
+    return _step_messages(system, user_message)
+
+
+def _build_core_messages(
+    topic: str | None,
+    level: str | None = None,
+    profile: str | None = None,
+    recent_topics: list[str] | None = None,
+    character_prompt: str = "",
+    lesson_type: str = "standard",
+) -> list[dict[str, str]]:
+    return build_lesson_prompt(topic, level, profile, recent_topics, character_prompt, lesson_type)
+
+
+def _build_slides_messages(
+    topic: str,
+    level: str | None = None,
+    character_prompt: str = "",
+    lesson_type: str = "standard",
+) -> list[dict[str, str]]:
+    system = _render_system_prompt(SLIDES_SYSTEM_PROMPT, level, character_prompt=character_prompt, lesson_type=lesson_type)
+    return _step_messages(system, f"Topic: {topic}. Give me the key ideas (slides) for this lesson.")
+
+
+def _build_tasks_messages(
+    topic: str,
+    level: str | None = None,
+    character_prompt: str = "",
+    lesson_type: str = "standard",
+) -> list[dict[str, str]]:
+    system = _render_system_prompt(TASKS_SYSTEM_PROMPT, level, character_prompt=character_prompt, lesson_type=lesson_type)
+    return _step_messages(system, f"Topic: {topic}. Create the speaking tasks for this lesson.")
 
 
 def parse_lesson_response(raw: str) -> LessonContent:
@@ -288,11 +356,49 @@ def _render_proposals_prompt(level: str | None = None, profile: str | None = Non
     return "\n".join(parts)
 
 
+def extract_str_list(raw: str, key: str) -> list[str]:
+    """Вытаскивает список строк из ответа LLM, толерантно к формату.
+
+    Принимает {"slides": [...]}, {..., "tasks": [...]} или просто массив.
+    При невалидном JSON возвращает [] — шаг урока не должен ронять весь урок.
+    """
+    if not raw or not raw.strip():
+        return []
+    payload = None
+    try:
+        payload = extract_json(raw)
+    except LessonParseError:
+        try:
+            payload = extract_json_list(raw)
+        except LessonParseError:
+            return []
+    if isinstance(payload, list):
+        items = payload
+    elif isinstance(payload, dict):
+        items = payload.get(key) or []
+    else:
+        return []
+    return [str(x) for x in items if isinstance(x, str)]
+
+
 class LessonService:
-    """Генерация структурированного урока через LLM."""
+    """Генерация структурированного урока через LLM в три шага.
+
+    Шаг 1 — «ядро» урока (тема, интро, слова, грамматика).
+    Шаг 2 — ключевые идеи (slides), шаг 3 — задания (tasks). Шаги 2 и 3 идут
+    параллельно после ядра. Если побочный шаг не удался — урок всё равно
+    собирается, а карточка не падает.
+    """
 
     def __init__(self, llm: LLMProvider):
         self._llm = llm
+
+    async def _step(self, messages: list[dict[str, str]]) -> str:
+        try:
+            return await self._llm.chat(messages, temperature=0.7, json_mode=True)
+        except Exception:
+            logger.warning("Шаг генерации урока не удался", exc_info=True)
+            return ""
 
     async def generate(
         self,
@@ -303,9 +409,22 @@ class LessonService:
         character_prompt: str = "",
         lesson_type: str = "standard",
     ) -> LessonContent:
-        messages = build_lesson_prompt(topic, level=level, profile=profile, recent_topics=recent_topics, character_prompt=character_prompt, lesson_type=lesson_type)
-        raw = await self._llm.chat(messages, temperature=0.7, json_mode=True)
-        return parse_lesson_response(raw)
+        core_raw = await self._step(
+            _build_core_messages(topic, level=level, profile=profile, recent_topics=recent_topics, character_prompt=character_prompt, lesson_type=lesson_type)
+        )
+        if not core_raw:
+            raise LessonParseError("LLM не вернул ядро урока")
+        content = parse_lesson_response(core_raw)
+        content.lesson_type = lesson_type
+
+        base = {"topic": content.topic or topic or "", "level": level, "character_prompt": character_prompt, "lesson_type": lesson_type}
+        slides_raw, tasks_raw = await asyncio.gather(
+            self._step(_build_slides_messages(base["topic"], level=level, character_prompt=character_prompt, lesson_type=lesson_type)),
+            self._step(_build_tasks_messages(base["topic"], level=level, character_prompt=character_prompt, lesson_type=lesson_type)),
+        )
+        content.slides = extract_str_list(slides_raw, "slides") or content.slides
+        content.tasks = extract_str_list(tasks_raw, "tasks") or content.tasks
+        return content
 
     async def generate_proposals(
         self,
