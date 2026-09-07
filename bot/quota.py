@@ -37,7 +37,15 @@ class QuotaGuard:
             return
         if await self._repo.get_unlimited_status(user_id):
             return
+        sub = await self._repo.get_subscription(user_id)
+        if sub and sub.is_active:
+            return
         used = await self._repo.get_llm_usage(user_id, self._today())
-        if used >= self._daily_limit:
-            raise QuotaExceeded(f"kвота исчерпана: {used}/{self._daily_limit}")
-        await self._repo.increment_llm_usage(user_id, self._today(), cost)
+        if used < self._daily_limit:
+            await self._repo.increment_llm_usage(user_id, self._today(), cost)
+            return
+        extra = await self._repo.get_extra_actions(user_id)
+        if extra >= cost:
+            await self._repo.decrement_extra_actions(user_id, cost)
+            return
+        raise QuotaExceeded(f"kвота исчерпана: {used}/{self._daily_limit}")
