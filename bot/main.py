@@ -36,6 +36,9 @@ from .handlers.review import router as review_router
 from .handlers.onboarding import router as onboarding_router
 from .handlers.leaderboard import router as leaderboard_router
 from .handlers.promo import router as promo_router
+from .handlers.wheel import router as wheel_router
+from .handlers.premium import router as premium_router
+from .handlers.payments import router as payments_router
 from .lessons import router as lessons_router
 
 logger = logging.getLogger(__name__)
@@ -54,6 +57,8 @@ COMMANDS = [
     BotCommand(command="reset", description="🔄 Сбросить состояние"),
     BotCommand(command="profile", description="🧠 Мой профиль"),
     BotCommand(command="promo", description="🎟 Промокод на безлимит"),
+    BotCommand(command="wheel", description="🎡 Колесо удачи"),
+    BotCommand(command="premium", description="💳 Подписка на безлимит"),
     BotCommand(command="help", description="Помощь"),
 ]
 
@@ -120,6 +125,9 @@ async def main() -> None:
     dp.include_router(diagnostic_router)
     dp.include_router(review_router)
     dp.include_router(promo_router)
+    dp.include_router(wheel_router)
+    dp.include_router(premium_router)
+    dp.include_router(payments_router)
     dp.include_router(text.router)
     dp.include_router(voice.router)
 

@@ -17,6 +17,7 @@ def _base_menu_rows(due_words: int = 0) -> list[list[InlineKeyboardButton]]:
             InlineKeyboardButton(text="🏆 Достижения", callback_data="achievements"),
             InlineKeyboardButton(text="🏅 Рейтинг", callback_data="leaderboard"),
         ],
+        [InlineKeyboardButton(text="🎡 Колесо удачи", callback_data="wheel:start")],
         [
             InlineKeyboardButton(text="📚 Подготовка к экзамену", callback_data="exam_prep"),
             InlineKeyboardButton(text="📮 Связь с разработчиком", callback_data="contact_dev"),
