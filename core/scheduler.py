@@ -66,6 +66,25 @@ async def check_and_send_reminders(bot: Bot, repo: Repository) -> None:
     logger.info("Reminders sent: %d / %d users", sent, len(users))
 
 
+async def reminder_wheel_misses(bot: Bot, repo: Repository) -> None:
+    """Напоминает пользователям о неиспользованной крутке Колеса удачи."""
+    users = await repo.get_all_users()
+    today = datetime.now(timezone.utc).date().isoformat()
+    sent = 0
+    for user in users:
+        try:
+            last_spin = await repo.get_last_spin_date(user.id)
+            if last_spin == today:
+                continue
+            text = "🎡 У тебя сегодня неиспользованная крутка удачи! Загляни: /wheel"
+            await bot.send_message(user.tg_id, text)
+            sent += 1
+            logger.info("Wheel reminder sent to user %s", user.tg_id)
+        except Exception:
+            logger.warning("Failed to send wheel reminder to user %s", user.tg_id, exc_info=True)
+    logger.info("Wheel reminders sent: %d / %d users", sent, len(users))
+
+
 def setup_scheduler(bot: Bot, repo: Repository, interval_hours: int = 24) -> AsyncIOScheduler:
     """Создаёт и настраивает планировщик напоминаний."""
     scheduler = AsyncIOScheduler()
@@ -74,6 +93,13 @@ def setup_scheduler(bot: Bot, repo: Repository, interval_hours: int = 24) -> Asy
         trigger=IntervalTrigger(hours=interval_hours),
         args=[bot, repo],
         id="send_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        reminder_wheel_misses,
+        trigger=IntervalTrigger(hours=interval_hours),
+        args=[bot, repo],
+        id="reminder_wheel_misses",
         replace_existing=True,
     )
     return scheduler
