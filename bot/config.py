@@ -47,6 +47,27 @@ class Settings(BaseSettings):
     llm_daily_limit: int = 30
     promo_unlimited_code: str = ""
 
+    # Подписки и платежи (Telegram Payments).
+    # subscription_plans: "дней:цена_в_минимальных_единицах,дней:цена,..." через запятую.
+    subscription_plans: str = "1:99,7:499,30:1299"
+    payments_provider_token: str = ""  # токен провайдера из @BotFather (Payments)
+    payments_currency: str = "RUB"
+
+    @property
+    def subscription_plan_list(self) -> list[tuple[int, int]]:
+        """Варианты подписки: [(дней, цена в миним. единицах валюты), ...]."""
+        plans: list[tuple[int, int]] = []
+        for part in self.subscription_plans.split(","):
+            item = part.strip()
+            if not item or ":" not in item:
+                continue
+            days_text, price_text = item.split(":", 1)
+            try:
+                plans.append((int(days_text), int(price_text)))
+            except ValueError:
+                continue
+        return plans
+
     @property
     def resolved_llm_base_url(self) -> str:
         preset = LLM_PRESETS.get(self.llm_provider, {})

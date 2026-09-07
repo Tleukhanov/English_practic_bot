@@ -17,18 +17,23 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
+from datetime import datetime, timezone, timedelta
+
 from .repo import (
     DiagnosticSession,
     LeaderboardRow,
     LessonNote,
     LessonSession,
+    Payment,
     Repository,
     SRSWord,
     Stats,
+    Subscription,
     TopicProposal,
     UserProfile,
     UserRow,
     WeakArea,
+    WheelCoupon,
 )
 
 _SCHEMA = """
@@ -119,6 +124,49 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     day TEXT NOT NULL,
     count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS user_balances (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    extra_actions INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS wheel_spins (
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    date TEXT NOT NULL,
+    PRIMARY KEY (user_id, date)
+);
+
+CREATE TABLE IF NOT EXISTS wheel_coupons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    discount_pct INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_wheel_coupons_user ON wheel_coupons(user_id, id);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    plan_days INTEGER NOT NULL,
+    granted_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id, id);
+
+CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_payment_id TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    amount INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'RUB',
+    plan_days INTEGER NOT NULL,
+    discount_pct INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
 );
 """
 
@@ -278,6 +326,199 @@ class SQLiteRepository(Repository):
             (user_id, day, inc),
         )
         await conn.commit()
+
+    # ---------- бонусные LLM-действия (колесо) ----------
+
+    async def get_extra_actions(self, user_id: int) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT extra_actions FROM user_balances WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return row["extra_actions"] if row else 0
+
+    async def _set_extra_actions(self, user_id: int, amount: int) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "INSERT INTO user_balances (user_id, extra_actions) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET extra_actions = excluded.extra_actions",
+            (user_id, max(0, amount)),
+        )
+        await conn.commit()
+
+    async def add_extra_actions(self, user_id: int, amount: int) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "INSERT INTO user_balances (user_id, extra_actions) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET extra_actions = extra_actions + excluded.extra_actions",
+            (user_id, max(0, amount)),
+        )
+        await conn.commit()
+
+    async def decrement_extra_actions(self, user_id: int, amount: int) -> None:
+        current = await self.get_extra_actions(user_id)
+        await self._set_extra_actions(user_id, current - amount)
+
+    # ---------- колесо удачи ----------
+
+    async def get_last_spin_date(self, user_id: int) -> str | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT date FROM wheel_spins WHERE user_id = ? ORDER BY date DESC LIMIT 1",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return row["date"] if row else None
+
+    async def save_spin(self, user_id: int, date: str) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "INSERT INTO wheel_spins (user_id, date) VALUES (?, ?) "
+            "ON CONFLICT(user_id, date) DO NOTHING",
+            (user_id, date),
+        )
+        await conn.commit()
+
+    async def create_coupon(self, user_id: int, discount_pct: int, expires_at: str) -> WheelCoupon:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "INSERT INTO wheel_coupons (user_id, discount_pct, expires_at, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, discount_pct, expires_at, _now()),
+        )
+        await conn.commit()
+        return WheelCoupon(
+            id=cursor.lastrowid,
+            user_id=user_id,
+            discount_pct=discount_pct,
+            expires_at=expires_at,
+            used=False,
+            created_at=_now(),
+        )
+
+    async def get_active_coupon(self, user_id: int) -> WheelCoupon | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, user_id, discount_pct, expires_at, used, created_at "
+            "FROM wheel_coupons WHERE user_id = ? AND used = 0 AND expires_at > ? "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id, _now()),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return WheelCoupon(
+            id=row["id"],
+            user_id=row["user_id"],
+            discount_pct=row["discount_pct"],
+            expires_at=row["expires_at"],
+            used=bool(row["used"]),
+            created_at=row["created_at"],
+        )
+
+    async def mark_coupon_used(self, coupon_id: int) -> None:
+        conn = self._require_conn()
+        await conn.execute("UPDATE wheel_coupons SET used = 1 WHERE id = ?", (coupon_id,))
+        await conn.commit()
+
+    # ---------- подписки ----------
+
+    async def grant_subscription(self, user_id: int, plan_days: int) -> Subscription:
+        now = datetime.now(timezone.utc)
+        existing = await self.get_subscription(user_id)
+        if existing is not None and existing.is_active:
+            try:
+                base = datetime.fromisoformat(existing.expires_at.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                base = now
+        else:
+            base = now
+        expires_at = (base + timedelta(days=plan_days)).isoformat()
+        granted_at = now.isoformat()
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "INSERT INTO subscriptions (user_id, plan_days, granted_at, expires_at) VALUES (?, ?, ?, ?)",
+            (user_id, plan_days, granted_at, expires_at),
+        )
+        await conn.commit()
+        return Subscription(
+            id=cursor.lastrowid,
+            user_id=user_id,
+            plan_days=plan_days,
+            granted_at=granted_at,
+            expires_at=expires_at,
+        )
+
+    async def get_subscription(self, user_id: int) -> Subscription | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, user_id, plan_days, granted_at, expires_at "
+            "FROM subscriptions WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return Subscription(
+            id=row["id"],
+            user_id=row["user_id"],
+            plan_days=row["plan_days"],
+            granted_at=row["granted_at"],
+            expires_at=row["expires_at"],
+        )
+
+    # ---------- платежи ----------
+
+    async def create_payment(
+        self,
+        user_id: int,
+        telegram_payment_id: str,
+        amount: int,
+        currency: str,
+        plan_days: int,
+        discount_pct: int,
+    ) -> Payment:
+        existing = await self.find_payment(telegram_payment_id)
+        if existing is not None:
+            return existing
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "INSERT INTO payments (telegram_payment_id, user_id, amount, currency, plan_days, discount_pct, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (telegram_payment_id, user_id, amount, currency, plan_days, discount_pct, _now()),
+        )
+        await conn.commit()
+        return Payment(
+            id=cursor.lastrowid,
+            telegram_payment_id=telegram_payment_id,
+            user_id=user_id,
+            amount=amount,
+            currency=currency,
+            plan_days=plan_days,
+            discount_pct=discount_pct,
+            created_at=_now(),
+        )
+
+    async def find_payment(self, telegram_payment_id: str) -> Payment | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, telegram_payment_id, user_id, amount, currency, plan_days, discount_pct, created_at "
+            "FROM payments WHERE telegram_payment_id = ?",
+            (telegram_payment_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return Payment(
+            id=row["id"],
+            telegram_payment_id=row["telegram_payment_id"],
+            user_id=row["user_id"],
+            amount=row["amount"],
+            currency=row["currency"],
+            plan_days=row["plan_days"],
+            discount_pct=row["discount_pct"],
+            created_at=row["created_at"],
+        )
 
     async def get_profile(self, user_id: int) -> UserProfile | None:
         conn = self._require_conn()

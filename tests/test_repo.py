@@ -278,3 +278,66 @@ async def test_last_activity_covers_messages_and_notes(repo):
     note = LessonNote(user_id=user.id, topic="T")
     await repo.add_lesson_note(note)
     assert await repo.get_last_activity(user.id) is not None
+
+
+async def test_extra_actions_roundtrip(repo):
+    user = await repo.get_or_create_user(600)
+    assert await repo.get_extra_actions(user.id) == 0
+    await repo.add_extra_actions(user.id, 50)
+    await repo.add_extra_actions(user.id, 10)
+    assert await repo.get_extra_actions(user.id) == 60
+    await repo.decrement_extra_actions(user.id, 25)
+    assert await repo.get_extra_actions(user.id) == 35
+    await repo.decrement_extra_actions(user.id, 500)
+    assert await repo.get_extra_actions(user.id) == 0
+
+
+async def test_wheel_spin_unique_per_day(repo):
+    user = await repo.get_or_create_user(601)
+    assert await repo.get_last_spin_date(user.id) is None
+    await repo.save_spin(user.id, "2026-09-01")
+    await repo.save_spin(user.id, "2026-09-01")
+    assert await repo.get_last_spin_date(user.id) == "2026-09-01"
+    await repo.save_spin(user.id, "2026-09-02")
+    assert await repo.get_last_spin_date(user.id) == "2026-09-02"
+
+
+async def test_coupon_roundtrip_and_usage(repo):
+    user = await repo.get_or_create_user(602)
+    coupon = await repo.create_coupon(user.id, 20, "2099-01-01T00:00:00+00:00")
+    assert coupon.id > 0
+    active = await repo.get_active_coupon(user.id)
+    assert active is not None and active.discount_pct == 20
+    await repo.mark_coupon_used(coupon.id)
+    assert await repo.get_active_coupon(user.id) is None
+
+
+async def test_expired_coupon_not_active(repo):
+    user = await repo.get_or_create_user(603)
+    await repo.create_coupon(user.id, 30, "2020-01-01T00:00:00+00:00")
+    assert await repo.get_active_coupon(user.id) is None
+
+
+async def test_subscription_grant_and_extension(repo):
+    user = await repo.get_or_create_user(604)
+    first = await repo.grant_subscription(user.id, 7)
+    assert first.plan_days == 7
+    assert first.expires_at > first.granted_at
+    saved = await repo.get_subscription(user.id)
+    assert saved is not None and saved.user_id == user.id
+
+    second = await repo.grant_subscription(user.id, 7)
+    third = await repo.grant_subscription(user.id, 7)
+    assert (await repo.get_subscription(user.id)).id == third.id
+    assert third.expires_at > second.expires_at
+    assert await repo.get_subscription(user.id) is not None
+
+
+async def test_payment_idempotent_and_find(repo):
+    user = await repo.get_or_create_user(605)
+    p1 = await repo.create_payment(user.id, "tg-pay-1", 499, "RUB", 7, 0)
+    p2 = await repo.create_payment(user.id, "tg-pay-1", 499, "RUB", 7, 0)
+    assert p1.id == p2.id
+    found = await repo.find_payment("tg-pay-1")
+    assert found is not None and found.amount == 499
+    assert await repo.find_payment("missing") is None

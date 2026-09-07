@@ -152,6 +152,65 @@ class LeaderboardRow:
     streak_days: int = 0
 
 
+@dataclass
+class Subscription:
+    """Подписка: полный доступ к LLM на срок (plan_days)."""
+
+    id: int = 0
+    user_id: int = 0
+    plan_days: int = 0  # 1 | 7 | 30
+    granted_at: str = ""
+    expires_at: str = ""
+
+    @property
+    def is_active(self) -> bool:
+        from datetime import datetime, timezone
+        if not self.expires_at:
+            return False
+        try:
+            expires = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return False
+        return datetime.now(timezone.utc) < expires
+
+
+@dataclass
+class WheelCoupon:
+    """Скидка-купон с колеса: N% на подписку, действует до expires_at."""
+
+    id: int = 0
+    user_id: int = 0
+    discount_pct: int = 0
+    expires_at: str = ""
+    used: bool = False
+    created_at: str = ""
+
+    @property
+    def is_expired(self) -> bool:
+        from datetime import datetime, timezone
+        if not self.expires_at:
+            return True
+        try:
+            expires = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return True
+        return datetime.now(timezone.utc) >= expires
+
+
+@dataclass
+class Payment:
+    """Запись платежа (Telegram Payments)."""
+
+    id: int = 0
+    telegram_payment_id: str = ""
+    user_id: int = 0
+    amount: int = 0  # в минимальных единицах валюты (копейки за RUB)
+    currency: str = "RUB"
+    plan_days: int = 0
+    discount_pct: int = 0
+    created_at: str = ""
+
+
 class Repository(ABC):
     @abstractmethod
     async def connect(self) -> None: ...
@@ -181,6 +240,58 @@ class Repository(ABC):
 
     @abstractmethod
     async def increment_llm_usage(self, user_id: int, day: str, inc: int = 1) -> None: ...
+
+    # ---------- бонусные LLM-действия (колесо) ----------
+
+    @abstractmethod
+    async def get_extra_actions(self, user_id: int) -> int: ...
+
+    @abstractmethod
+    async def add_extra_actions(self, user_id: int, amount: int) -> None: ...
+
+    @abstractmethod
+    async def decrement_extra_actions(self, user_id: int, amount: int) -> None: ...
+
+    # ---------- колесо удачи ----------
+
+    @abstractmethod
+    async def get_last_spin_date(self, user_id: int) -> str | None: ...
+
+    @abstractmethod
+    async def save_spin(self, user_id: int, date: str) -> None: ...
+
+    @abstractmethod
+    async def create_coupon(self, user_id: int, discount_pct: int, expires_at: str) -> WheelCoupon: ...
+
+    @abstractmethod
+    async def get_active_coupon(self, user_id: int) -> WheelCoupon | None: ...
+
+    @abstractmethod
+    async def mark_coupon_used(self, coupon_id: int) -> None: ...
+
+    # ---------- подписки ----------
+
+    @abstractmethod
+    async def grant_subscription(self, user_id: int, plan_days: int) -> Subscription: ...
+
+    @abstractmethod
+    async def get_subscription(self, user_id: int) -> Subscription | None: ...
+
+    # ---------- платежи ----------
+
+    @abstractmethod
+    async def create_payment(
+        self,
+        user_id: int,
+        telegram_payment_id: str,
+        amount: int,
+        currency: str,
+        plan_days: int,
+        discount_pct: int,
+    ) -> Payment: ...
+
+    @abstractmethod
+    async def find_payment(self, telegram_payment_id: str) -> Payment | None: ...
 
     @abstractmethod
     async def get_profile(self, user_id: int) -> UserProfile | None: ...
