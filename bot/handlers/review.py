@@ -121,7 +121,7 @@ async def cb_review_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 @router.message(ReviewState.answering, F.text)
 async def on_review_answer(message: Message, repo: Repository, srs: SRSService, state: FSMContext) -> None:
     text = message.text.strip()
-    if not text or len(text) < 2:
+    if not text:
         return
 
     user = await repo.get_or_create_user(

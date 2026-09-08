@@ -80,6 +80,15 @@ async def main() -> None:
             settings.llm_provider,
         )
 
+    if settings.admin_tg_id == 0:
+        logger.warning(
+            "ADMIN_TG_ID не задан: подтверждение Kaspi-оплат будет недоступно."
+        )
+    if not settings.kaspi_qr_path:
+        logger.warning(
+            "KASPI_QR_PATH не задан: QR будет показан текстом, без картинки."
+        )
+
     repo = SQLiteRepository(settings.database_path)
     await repo.connect()
 

@@ -91,6 +91,20 @@ async def test_reject_cancels_without_grant(repo):
     assert (sub is None) or (not sub.is_active)
 
 
+async def test_switch_tariff_creates_new_order(repo):
+    """Выбор другого тарифа при живом заказе: старый отменяется, остаётся один."""
+    user = await repo.get_or_create_user(2008)
+    old = await repo.create_order(user.id, 7, 1990, 0, 0, _make_order_code())
+    await repo.cancel_order(old.id)
+    new = await repo.create_order(user.id, 30, 1990, 0, 0, _make_order_code())
+    pending = await repo.get_pending_order(user.id)
+    assert pending.id == new.id
+    assert pending.plan_days == 30
+    assert await repo.get_order(old.id) is not None
+    restored = await repo.get_order(old.id)
+    assert restored.status == KaspiOrder.STATUS_CANCELLED
+
+
 def test_make_order_code_format():
     code = _make_order_code()
     assert code.startswith("BOT-")

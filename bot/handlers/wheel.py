@@ -18,6 +18,8 @@ from core.wheel import (
     WheelPrize,
     WheelService,
 )
+
+from ..keyboards import main_menu
 from storage.repo import Repository
 
 router = Router()
@@ -119,7 +121,7 @@ async def cb_wheel_spin(callback: CallbackQuery, repo: Repository) -> None:
         status = await callback.message.edit_text("🎡 Крутим колесо...", reply_markup=None)
         prize = await service.spin(user.id)
         await _animate(status)
-        await status.edit_text(format_wheel_prize(prize))
+        await status.edit_text(format_wheel_prize(prize), reply_markup=main_menu())
         await callback.answer()
     except WheelCooldown:
         text = "Сегодня уже крутил! Возвращайся завтра 🎡"

@@ -90,6 +90,17 @@ async def cb_kaspi_pay(callback: CallbackQuery, repo: Repository, settings: Sett
         purchase = await repo.create_order(
             user.id, days, final, discount, coupon_id, order_code=_make_order_code()
         )
+    elif purchase.plan_days != days:
+        await repo.cancel_order(purchase.id)
+        coupon = await repo.get_active_coupon(user.id)
+        discount = coupon.discount_pct if coupon and not coupon.is_expired else 0
+        coupon_id = coupon.id if coupon else 0
+        price = plan[1]
+        final = price - price * discount // 100
+        purchase = await repo.create_order(
+            user.id, days, final, discount, coupon_id, order_code=_make_order_code()
+        )
+        logger.info("Kaspi-заказ заменён: user=%s new_days=%s", user.id, days)
 
     text = (
         f"💳 Оплати по Kaspi QR: <b>{purchase.amount}₸</b> за {purchase.plan_days} дн."
@@ -102,11 +113,8 @@ async def cb_kaspi_pay(callback: CallbackQuery, repo: Repository, settings: Sett
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Я оплатил", callback_data="kaspi:paid"
-                )
-            ]
+            [InlineKeyboardButton(text="✅ Я оплатил", callback_data="kaspi:paid")],
+            [InlineKeyboardButton(text="❌ Отменить", callback_data="kaspi:cancel")],
         ]
     )
     try:
@@ -118,7 +126,7 @@ async def cb_kaspi_pay(callback: CallbackQuery, repo: Repository, settings: Sett
             )
         else:
             await callback.message.answer(
-                "🖼 <b>Вот QR для оплаты</b> (задай KASPI_QR_PATH в .env).\n\n" + text,
+                "🖼 <b>Вот QR для оплаты</b>\n\n" + text,
                 reply_markup=keyboard,
             )
     except Exception:
@@ -127,6 +135,25 @@ async def cb_kaspi_pay(callback: CallbackQuery, repo: Repository, settings: Sett
             "❌ Не удалось показать QR. Попробуй позже или напиши: " + FALLBACK_DEVELOPER
         )
     logger.info("Kaspi-заказ создан: user=%s days=%s code=%s", user.id, days, purchase.order_code)
+
+
+@router.callback_query(F.data == "kaspi:cancel")
+async def cb_kaspi_cancel(callback: CallbackQuery, repo: Repository) -> None:
+    await callback.answer()
+    user = await repo.get_or_create_user(
+        callback.from_user.id,
+        username=callback.from_user.username,
+        first_name=callback.from_user.first_name,
+    )
+    purchase = await repo.get_pending_order(user.id)
+    if purchase is None:
+        await callback.message.edit_text("Активного заказа нет. Выбери тариф: /premium")
+        return
+    await repo.cancel_order(purchase.id)
+    await callback.message.edit_text(
+        "❌ Заказ отменён. Если передумаешь — загляни в /premium 😉"
+    )
+    logger.info("Kaspi-заказ отменён: user=%s order=%s", user.id, purchase.id)
 
 
 @router.callback_query(F.data == "kaspi:paid")
@@ -163,6 +190,9 @@ async def on_check_photo(message: Message, repo: Repository, settings: Settings)
     )
     purchase = await repo.get_pending_order(user.id)
     if purchase is None:
+        await message.answer(
+            "📷 Фото получил, но активного заказа нет. Хочешь подписку? Нажми /premium"
+        )
         return
     if purchase.photo_file_id:
         await message.answer("✅ Чек уже получен! Ждём проверки — подписка вот-вот активируется.")

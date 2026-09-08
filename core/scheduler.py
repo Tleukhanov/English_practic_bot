@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from datetime import datetime, timezone
 
@@ -53,7 +54,7 @@ async def check_and_send_reminders(bot: Bot, repo: Repository) -> None:
     for user in users:
         try:
             info = await retention_service.get_retention_info(user.id)
-            name = user.first_name or "друг"
+            name = html.escape(user.first_name or "друг")
             message = _build_reminder_message(name, info)
 
             if message:
