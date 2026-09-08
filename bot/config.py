@@ -47,15 +47,15 @@ class Settings(BaseSettings):
     llm_daily_limit: int = 30
     promo_unlimited_code: str = ""
 
-    # Подписки и платежи (Telegram Payments).
-    # subscription_plans: "дней:цена_в_минимальных_единицах,дней:цена,..." через запятую.
-    subscription_plans: str = "1:99,7:499,30:1299"
-    payments_provider_token: str = ""  # токен провайдера из @BotFather (Payments)
-    payments_currency: str = "RUB"
+    # Подписки через Kaspi QR: оплата вручную (перевод с комментарием),
+    # подтверждение по скриншоту чека. Суммы — целые тенге.
+    subscription_plans: str = "1:990,7:1990,30:4990"
+    admin_tg_id: int = 0  # кому отправлять чеки на подтверждение
+    kaspi_qr_path: str = ""  # путь/URL картинки со статичным Kaspi QR
 
     @property
     def subscription_plan_list(self) -> list[tuple[int, int]]:
-        """Варианты подписки: [(дней, цена в миним. единицах валюты), ...]."""
+        """Варианты подписки: [(дней, цена в тенге), ...]."""
         plans: list[tuple[int, int]] = []
         for part in self.subscription_plans.split(","):
             item = part.strip()

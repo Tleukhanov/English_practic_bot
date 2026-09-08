@@ -21,6 +21,7 @@ from datetime import datetime, timezone, timedelta
 
 from .repo import (
     DiagnosticSession,
+    KaspiOrder,
     LeaderboardRow,
     LessonNote,
     LessonSession,
@@ -168,6 +169,22 @@ CREATE TABLE IF NOT EXISTS payments (
     discount_pct INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS kaspi_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    plan_days INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    discount_pct INTEGER NOT NULL DEFAULT 0,
+    coupon_id INTEGER NOT NULL DEFAULT 0,
+    order_code TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    photo_file_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    confirmed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_kaspi_orders_user ON kaspi_orders(user_id, id);
 """
 
 
@@ -284,6 +301,24 @@ class SQLiteRepository(Repository):
         )
         await conn.commit()
         return UserRow(id=cursor.lastrowid, tg_id=tg_id, username=username, first_name=first_name)
+
+    async def get_user(self, user_id: int) -> UserRow | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, tg_id, username, first_name, level, unlimited FROM users WHERE id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return UserRow(
+            id=row["id"],
+            tg_id=row["tg_id"],
+            username=row["username"],
+            first_name=row["first_name"],
+            level=row["level"],
+            is_unlimited=bool(row["unlimited"]),
+        )
 
     async def set_level(self, user_id: int, level: str) -> None:
         conn = self._require_conn()
@@ -519,6 +554,100 @@ class SQLiteRepository(Repository):
             discount_pct=row["discount_pct"],
             created_at=row["created_at"],
         )
+
+    # ---------- Kaspi QR оплата ----------
+
+    def _order_from_row(self, row) -> KaspiOrder:
+        return KaspiOrder(
+            id=row["id"],
+            user_id=row["user_id"],
+            plan_days=row["plan_days"],
+            amount=row["amount"],
+            discount_pct=row["discount_pct"],
+            coupon_id=row["coupon_id"],
+            order_code=row["order_code"],
+            status=row["status"],
+            photo_file_id=row["photo_file_id"],
+            created_at=row["created_at"],
+            confirmed_at=row["confirmed_at"],
+        )
+
+    _ORDER_COLUMNS = "id, user_id, plan_days, amount, discount_pct, coupon_id, order_code, status, photo_file_id, created_at, confirmed_at"
+
+    async def create_order(
+        self,
+        user_id: int,
+        plan_days: int,
+        amount: int,
+        discount_pct: int,
+        coupon_id: int,
+        order_code: str,
+    ) -> KaspiOrder:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "INSERT INTO kaspi_orders (user_id, plan_days, amount, discount_pct, coupon_id, order_code, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, plan_days, amount, discount_pct, coupon_id, order_code, _now()),
+        )
+        await conn.commit()
+        return KaspiOrder(
+            id=cursor.lastrowid,
+            user_id=user_id,
+            plan_days=plan_days,
+            amount=amount,
+            discount_pct=discount_pct,
+            coupon_id=coupon_id,
+            order_code=order_code,
+            status=KaspiOrder.STATUS_PENDING,
+            created_at=_now(),
+        )
+
+    async def get_pending_order(self, user_id: int) -> KaspiOrder | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            f"SELECT {self._ORDER_COLUMNS} FROM kaspi_orders "
+            "WHERE user_id = ? AND status = ? ORDER BY id DESC LIMIT 1",
+            (user_id, KaspiOrder.STATUS_PENDING),
+        )
+        row = await cursor.fetchone()
+        return self._order_from_row(row) if row else None
+
+    async def get_order(self, order_id: int) -> KaspiOrder | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            f"SELECT {self._ORDER_COLUMNS} FROM kaspi_orders WHERE id = ?",
+            (order_id,),
+        )
+        row = await cursor.fetchone()
+        return self._order_from_row(row) if row else None
+
+    async def attach_photo(self, order_id: int, photo_file_id: str) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE kaspi_orders SET photo_file_id = ? WHERE id = ?",
+            (photo_file_id, order_id),
+        )
+        await conn.commit()
+
+    async def approve_order(self, order_id: int) -> KaspiOrder | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "UPDATE kaspi_orders SET status = ?, confirmed_at = ? "
+            "WHERE id = ? AND status = ?",
+            (KaspiOrder.STATUS_APPROVED, _now(), order_id, KaspiOrder.STATUS_PENDING),
+        )
+        await conn.commit()
+        if cursor.rowcount == 0:
+            return None
+        return await self.get_order(order_id)
+
+    async def cancel_order(self, order_id: int) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE kaspi_orders SET status = ? WHERE id = ? AND status = ?",
+            (KaspiOrder.STATUS_CANCELLED, order_id, KaspiOrder.STATUS_PENDING),
+        )
+        await conn.commit()
 
     async def get_profile(self, user_id: int) -> UserProfile | None:
         conn = self._require_conn()

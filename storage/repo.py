@@ -211,6 +211,27 @@ class Payment:
     created_at: str = ""
 
 
+@dataclass
+class KaspiOrder:
+    """Заказ на подписку по Kaspi QR: оплата вручную, подтверждение админом."""
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_CANCELLED = "cancelled"
+
+    id: int = 0
+    user_id: int = 0
+    plan_days: int = 0
+    amount: int = 0  # целые тенге для Kaspi-перевода
+    discount_pct: int = 0
+    coupon_id: int = 0
+    order_code: str = ""  # комментарий к переводу, напр. BOT-ABC123
+    status: str = STATUS_PENDING
+    photo_file_id: str = ""  # чек/скриншот перевода
+    created_at: str = ""
+    confirmed_at: str = ""
+
+
 class Repository(ABC):
     @abstractmethod
     async def connect(self) -> None: ...
@@ -220,6 +241,9 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_or_create_user(self, tg_id: int, username: str | None = None, first_name: str | None = None) -> UserRow: ...
+
+    @abstractmethod
+    async def get_user(self, user_id: int) -> UserRow | None: ...
 
     @abstractmethod
     async def set_level(self, user_id: int, level: str) -> None: ...
@@ -292,6 +316,34 @@ class Repository(ABC):
 
     @abstractmethod
     async def find_payment(self, telegram_payment_id: str) -> Payment | None: ...
+
+    # ---------- Kaspi QR оплата ----------
+
+    @abstractmethod
+    async def create_order(
+        self,
+        user_id: int,
+        plan_days: int,
+        amount: int,
+        discount_pct: int,
+        coupon_id: int,
+        order_code: str,
+    ) -> KaspiOrder: ...
+
+    @abstractmethod
+    async def get_pending_order(self, user_id: int) -> KaspiOrder | None: ...
+
+    @abstractmethod
+    async def get_order(self, order_id: int) -> KaspiOrder | None: ...
+
+    @abstractmethod
+    async def attach_photo(self, order_id: int, photo_file_id: str) -> None: ...
+
+    @abstractmethod
+    async def approve_order(self, order_id: int) -> KaspiOrder | None: ...
+
+    @abstractmethod
+    async def cancel_order(self, order_id: int) -> None: ...
 
     @abstractmethod
     async def get_profile(self, user_id: int) -> UserProfile | None: ...
