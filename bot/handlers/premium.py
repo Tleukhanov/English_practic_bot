@@ -28,7 +28,7 @@ def premium_keyboard(plans: list[tuple[int, int]], coupon=None) -> InlineKeyboar
             rows.append(
                 [
                     InlineKeyboardButton(
-                        text=f"Купить {days} дней — {final}₽ (-{coupon.discount_pct}%)",
+                        text=f"Купить {days} дней — {final}₸ (-{coupon.discount_pct}%)",
                         callback_data=f"premium:buy:{days}",
                     )
                 ]
@@ -37,7 +37,7 @@ def premium_keyboard(plans: list[tuple[int, int]], coupon=None) -> InlineKeyboar
             rows.append(
                 [
                     InlineKeyboardButton(
-                        text=f"Купить {days} дней — {price}₽",
+                        text=f"Купить {days} дней — {price}₸",
                         callback_data=f"premium:buy:{days}",
                     )
                 ]
@@ -102,14 +102,14 @@ async def cb_premium_buy(callback: CallbackQuery, repo: Repository, settings: Se
     if coupon and not coupon.is_expired:
         discount = coupon.discount_pct
         final = price - price * discount // 100
-    text = f"Подписка {days} дней, цена {final}₽"
+    text = f"Подписка {days} дней, цена {final}₸"
     if discount:
         text += f" (со скидкой {discount}%)"
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="💳 Оплатить", callback_data=f"premium:confirm:{days}"
+                    text="🪙 Оплатить Kaspi QR", callback_data=f"kaspi:pay:{days}"
                 )
             ]
         ]
