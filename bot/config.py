@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # Подписки через Kaspi QR: оплата вручную (перевод с комментарием),
     # подтверждение по скриншоту чека. Суммы — целые тенге.
-    subscription_plans: str = "1:990,7:1990,30:4990"
+    subscription_plans: str = "1:990,7:1990,30:1990"
     admin_tg_id: int = 0  # кому отправлять чеки на подтверждение
     kaspi_qr_path: str = ""  # путь/URL картинки со статичным Kaspi QR
 

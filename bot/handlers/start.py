@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import html
 import logging
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from storage.repo import Repository
@@ -95,10 +97,11 @@ def _build_retention_message(name: str, info) -> str | None:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, repo: Repository) -> None:
+async def cmd_start(message: Message, repo: Repository, state: FSMContext) -> None:
     from core.retention import RetentionService
     from .onboarding import _welcome_text, _level_keyboard
 
+    await state.clear()
     user = await repo.get_or_create_user(
         message.from_user.id,
         username=message.from_user.username,
@@ -130,7 +133,7 @@ async def cmd_start(message: Message, repo: Repository) -> None:
         )
         return
 
-    name = message.from_user.first_name or "друг"
+    name = html.escape(message.from_user.first_name or "друг")
 
     is_new = user.level is None
     if is_new:
@@ -206,7 +209,8 @@ async def cmd_help(message: Message) -> None:
 
 
 @router.message(Command("reset"))
-async def cmd_reset(message: Message, repo: Repository) -> None:
+async def cmd_reset(message: Message, repo: Repository, state: FSMContext) -> None:
+    await state.clear()
     await repo.abort_active_lessons(message.from_user.id)
     await repo.abort_active_diagnostics(message.from_user.id)
     await message.answer("🔄 Состояние сброшено. Можешь начать заново!", reply_markup=main_menu())

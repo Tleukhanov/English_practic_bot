@@ -114,12 +114,12 @@ def format_profile(profile: UserProfile | None, level: str | None) -> str:
         lines.append(f"   {label}")
 
     rows = [
-        ("🎯 Цель", profile.goal if profile else "", "расскажи, зачем учишь английский"),
-        ("💡 Интересы", profile.interests if profile else "", "пиши о любимых темах — сделаю уроки вокруг них"),
-        ("⚠️ Слабые места", profile.weak_areas if profile else "", "пока не накопил данных"),
+        ("🎯 Цель", escape(profile.goal) if profile and profile.goal else "", "расскажи, зачем учишь английский"),
+        ("💡 Интересы", escape(profile.interests) if profile and profile.interests else "", "пиши о любимых темах — сделаю уроки вокруг них"),
+        ("⚠️ Слабые места", escape(profile.weak_areas) if profile and profile.weak_areas else "", "пока не накопил данных"),
         ("🎭 Персонаж", _format_character(profile) if profile else "", "выбери: /character"),
         ("🎤 Формат", _format_preference(profile) if profile else "", "предпочитаешь голос или текст?"),
-        ("📌 Заметка", profile.notes if profile else "", "—"),
+        ("📌 Заметка", escape(profile.notes) if profile and profile.notes else "", "—"),
     ]
     for label, value, hint in rows:
         if value:
