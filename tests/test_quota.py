@@ -20,7 +20,15 @@ async def test_consume_within_limit(repo):
         await guard.consume(user.id)
     assert await repo.get_llm_usage(user.id, guard._today()) == 3
     with pytest.raises(QuotaExceeded):
-        await guard.consume(user.id)
+        await guard.check(user.id)
+
+
+async def test_check_does_not_mutate(repo):
+    guard = QuotaGuard(repo, daily_limit=3)
+    user = await repo.get_or_create_user(1008)
+    await guard.check(user.id)
+    assert await repo.get_llm_usage(user.id, guard._today()) == 0
+    assert await repo.get_extra_actions(user.id) == 0
 
 
 async def test_zero_limit_is_disabled(repo):
@@ -29,6 +37,7 @@ async def test_zero_limit_is_disabled(repo):
     for _ in range(100):
         await guard.consume(user.id)
     assert await repo.get_llm_usage(user.id, guard._today()) == 0
+    await guard.check(user.id)
 
 
 async def test_unlimited_user_bypasses_limit(repo):
@@ -38,6 +47,7 @@ async def test_unlimited_user_bypasses_limit(repo):
     for _ in range(10):
         await guard.consume(user.id)
     assert await repo.get_unlimited_status(user.id) is True
+    await guard.check(user.id)
 
 
 async def test_usage_is_per_day(repo):
@@ -61,7 +71,7 @@ async def test_custom_cost_consumption(repo):
     await guard.consume(user.id, cost=2)
     assert await repo.get_llm_usage(user.id, guard._today()) == 5
     with pytest.raises(QuotaExceeded):
-        await guard.consume(user.id, cost=1)
+        await guard.check(user.id)
 
 
 async def test_unlimited_status_default_false(repo):
@@ -76,6 +86,7 @@ async def test_subscription_bypasses_daily_limit(repo):
     for _ in range(5):
         await guard.consume(user.id)
     assert await repo.get_llm_usage(user.id, guard._today()) == 0
+    await guard.check(user.id)
 
 
 async def test_extra_actions_used_after_daily_limit(repo):
@@ -83,14 +94,17 @@ async def test_extra_actions_used_after_daily_limit(repo):
     user = await repo.get_or_create_user(1102)
     await guard.consume(user.id)
     await guard.consume(user.id)
+    with pytest.raises(QuotaExceeded):
+        await guard.check(user.id)
     await repo.add_extra_actions(user.id, 5)
+    await guard.check(user.id)
     await guard.consume(user.id)
     assert await repo.get_extra_actions(user.id) == 4
     for _ in range(4):
         await guard.consume(user.id)
     assert await repo.get_extra_actions(user.id) == 0
     with pytest.raises(QuotaExceeded):
-        await guard.consume(user.id)
+        await guard.check(user.id)
 
 
 async def test_unlimited_promo_still_works(repo):
@@ -99,6 +113,7 @@ async def test_unlimited_promo_still_works(repo):
     await repo.set_unlimited_status(user.id, True)
     for _ in range(3):
         await guard.consume(user.id)
+    await guard.check(user.id)
 
 
 def test_premium_command_import_smoke():

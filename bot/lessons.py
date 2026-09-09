@@ -3,6 +3,10 @@
 Состояние урока хранится в БД (lesson_sessions), поэтому переживает рестарты.
 Пользователь идёт по шагам: intro -> vocabulary -> slides -> grammar -> tasks -> recap.
 Текст/голос во время урока обрабатываются как практика (см. handlers/text.py, voice.py).
+
+Квота (QuotaGuard): урок генерируется за 3 LLM-вызова, поэтому списывается
+cost=3 только после успешной генерации. Фоновые заметки урока (в конце урока)
+пропускаются при QuotaExceeded, чтобы не тратить квоту впустую.
 """
 
 from __future__ import annotations
@@ -76,14 +80,26 @@ async def _create_lesson_note(
     content,
     repo: Repository,
     note_service: LessonNoteService,
+    quota: QuotaGuard | None = None,
 ) -> LessonNote | None:
-    """Генерирует и сохраняет заметку урока. Ошибки не ломают завершение урока."""
+    """Генерирует и сохраняет заметку урока. Ошибки не ломают завершение урока.
+
+    Фоновая генерация: если квота исчерпана (QuotaExceeded), пропускаем заметку.
+    В противном случае списываем квоту после успешной генерации.
+    """
     try:
+        if quota is not None:
+            await quota.check(user_id)
         answers = await repo.get_lesson_messages(session_id)
         note = await note_service.generate(user_id, session_id, content, answers)
         await repo.add_lesson_note(note)
+        if quota is not None:
+            await quota.consume(user_id)
         logger.info("Заметка урока: user=%s lesson=%s answers=%s", user_id, session_id, len(answers))
         return note
+    except QuotaExceeded:
+        logger.debug("Заметка урока пропущена (квота исчерпана): user=%s lesson=%s", user_id, session_id)
+        return None
     except Exception:
         logger.exception("Не удалось создать заметку урока user=%s lesson=%s", user_id, session_id)
         return None
@@ -173,7 +189,7 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
 
     if quota is not None:
         try:
-            await quota.consume(user.id)
+            await quota.check(user.id)
         except QuotaExceeded:
             await target.answer(QUOTA_EXCEEDED_TEXT)
             return
@@ -194,6 +210,8 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
             if not proposals:
                 await status.edit_text("⚠️ Не удалось подобрать темы. Попробуй снова: /lesson")
                 return
+            if quota is not None:
+                await quota.consume(user.id, cost=1)
             await repo.save_topic_proposals(
                 user.id,
                 [TopicProposal(topic=p["topic"], description=p["description"]) for p in proposals],
@@ -218,6 +236,9 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
         logger.exception("Ошибка генерации урока: %s", exc)
         await status.edit_text("⚠️ Не удалось составить урок. Попробуй ещё раз: /lesson")
         return
+
+    if quota is not None:
+        await quota.consume(user.id, cost=3)
 
     session = await repo.start_lesson(user.id, content.topic, lesson_content_to_json(content))
     intro = format_lesson_step("intro", content)
@@ -256,7 +277,7 @@ async def cb_select_topic(
 
     if quota is not None:
         try:
-            await quota.consume(user.id)
+            await quota.check(user.id)
         except QuotaExceeded:
             await callback.message.answer(QUOTA_EXCEEDED_TEXT)
             return
@@ -280,6 +301,9 @@ async def cb_select_topic(
         await status.edit_text("⚠️ Не удалось составить урок. Попробуй снова: /lesson")
         return
 
+    if quota is not None:
+        await quota.consume(user.id, cost=3)
+
     session = await repo.start_lesson(user.id, content.topic, lesson_content_to_json(content))
     intro = format_lesson_step("intro", content)
     if user.level is None:
@@ -301,6 +325,7 @@ async def cb_lesson_next(
     note_service: LessonNoteService,
     srs: SRSService = None,
     state: FSMContext = None,
+    quota: QuotaGuard | None = None,
 ) -> None:
     if state:
         current = await state.get_state()
@@ -338,7 +363,7 @@ async def cb_lesson_next(
             # Завершаем урок ДО генерации заметки: повторный тап не создаст дубль.
             await repo.finish_active_lessons(user.id)
             await callback.message.bot.send_chat_action(callback.message.chat.id, action="typing")
-            note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
+            note = await _create_lesson_note(user.id, session.id, content, repo, note_service, quota=quota)
             await _merge_note_into_profile(repo, user.id, content, note)
             await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
             await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
@@ -381,6 +406,7 @@ async def cb_lesson_end(
     note_service: LessonNoteService,
     srs: SRSService = None,
     state: FSMContext = None,
+    quota: QuotaGuard | None = None,
 ) -> None:
     if state:
         current = await state.get_state()
@@ -404,7 +430,7 @@ async def cb_lesson_end(
         # Завершаем урок ДО генерации заметки: повторный тап не создаст дубль.
         await repo.finish_active_lessons(user.id)
         await callback.message.bot.send_chat_action(callback.message.chat.id, action="typing")
-        note = await _create_lesson_note(user.id, session.id, content, repo, note_service)
+        note = await _create_lesson_note(user.id, session.id, content, repo, note_service, quota=quota)
         await _merge_note_into_profile(repo, user.id, content, note)
         await _save_lesson_vocabulary(repo, user.id, content, session.id, srs)
         await callback.message.edit_text(_finished_text(content, note), reply_markup=main_menu())
