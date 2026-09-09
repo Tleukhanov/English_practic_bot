@@ -56,7 +56,7 @@ async def _grant_order(repo: Repository, order: KaspiOrder) -> Subscription | No
     if order.coupon_id > 0:
         coupon = await repo.get_active_coupon(order.user_id)
         if coupon is not None and coupon.id == order.coupon_id:
-            await repo.mark_coupon_used(order.coupon_id)
+            await repo.mark_coupon_used(order.coupon_id, order.user_id)
     logger.info("Kaspi-подписка выдана: user=%s days=%s order=%s", order.user_id, order.plan_days, order.id)
     return subscription
 

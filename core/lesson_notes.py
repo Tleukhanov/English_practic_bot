@@ -59,7 +59,7 @@ def build_note_prompt(content: LessonContent, answers: list[dict]) -> list[dict[
                             issues.append(str(issue["problem"]))
             except (json.JSONDecodeError, TypeError):
                 pass
-            verdict = "ok" if answer.get("is_correct") else f"issues: {', '.join(issues) or 'есть замечания'}"
+            verdict = "ok" if answer.get("is_correct") is not False else f"issues: {', '.join(issues) or 'есть замечания'}"
             lines.append(
                 f"ANSWER {i}: {answer.get('content', '')}\n"
                 f"verdict: {verdict}\n"

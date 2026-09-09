@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS users (
     tg_id INTEGER NOT NULL UNIQUE,
     username TEXT,
     first_name TEXT,
+    level TEXT,
+    unlimited INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 
@@ -54,6 +56,7 @@ CREATE TABLE IF NOT EXISTS messages (
     is_correct INTEGER,
     issues_json TEXT,
     corrected_text TEXT,
+    lesson_id INTEGER,
     created_at TEXT NOT NULL
 );
 
@@ -92,6 +95,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     weak_areas TEXT NOT NULL DEFAULT '',
     preferred_format TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
+    character TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL
 );
 
@@ -185,6 +189,8 @@ CREATE TABLE IF NOT EXISTS kaspi_orders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_kaspi_orders_user ON kaspi_orders(user_id, id);
+
+CREATE INDEX IF NOT EXISTS idx_kaspi_orders_pending ON kaspi_orders(user_id, status) WHERE status = 'pending';
 """
 
 
@@ -280,27 +286,26 @@ class SQLiteRepository(Repository):
         first_name: str | None = None,
     ) -> UserRow:
         conn = self._require_conn()
+        await conn.execute(
+            "INSERT INTO users (tg_id, username, first_name, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(tg_id) DO UPDATE SET "
+            "username = excluded.username, first_name = excluded.first_name",
+            (tg_id, username, first_name, _now()),
+        )
+        await conn.commit()
         cursor = await conn.execute(
             "SELECT id, tg_id, username, first_name, level, unlimited FROM users WHERE tg_id = ?",
             (tg_id,),
         )
         row = await cursor.fetchone()
-        if row is not None:
-            return UserRow(
-                id=row["id"],
-                tg_id=row["tg_id"],
-                username=row["username"],
-                first_name=row["first_name"],
-                level=row["level"],
-                is_unlimited=bool(row["unlimited"]),
-            )
-
-        cursor = await conn.execute(
-            "INSERT INTO users (tg_id, username, first_name, created_at) VALUES (?, ?, ?, ?)",
-            (tg_id, username, first_name, _now()),
+        return UserRow(
+            id=row["id"],
+            tg_id=row["tg_id"],
+            username=row["username"],
+            first_name=row["first_name"],
+            level=row["level"],
+            is_unlimited=bool(row["unlimited"]),
         )
-        await conn.commit()
-        return UserRow(id=cursor.lastrowid, tg_id=tg_id, username=username, first_name=first_name)
 
     async def get_user(self, user_id: int) -> UserRow | None:
         conn = self._require_conn()
@@ -392,8 +397,12 @@ class SQLiteRepository(Repository):
         await conn.commit()
 
     async def decrement_extra_actions(self, user_id: int, amount: int) -> None:
-        current = await self.get_extra_actions(user_id)
-        await self._set_extra_actions(user_id, current - amount)
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE user_balances SET extra_actions = MAX(0, extra_actions - ?) WHERE user_id = ?",
+            (amount, user_id),
+        )
+        await conn.commit()
 
     # ---------- колесо удачи ----------
 
@@ -416,10 +425,13 @@ class SQLiteRepository(Repository):
         await conn.commit()
 
     async def create_coupon(self, user_id: int, discount_pct: int, expires_at: str) -> WheelCoupon:
+        if not 0 <= discount_pct <= 100:
+            raise ValueError(f"discount_pct должен быть в диапазоне 0..100, получено {discount_pct}")
         conn = self._require_conn()
+        now = _now()
         cursor = await conn.execute(
             "INSERT INTO wheel_coupons (user_id, discount_pct, expires_at, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, discount_pct, expires_at, _now()),
+            (user_id, discount_pct, expires_at, now),
         )
         await conn.commit()
         return WheelCoupon(
@@ -428,7 +440,7 @@ class SQLiteRepository(Repository):
             discount_pct=discount_pct,
             expires_at=expires_at,
             used=False,
-            created_at=_now(),
+            created_at=now,
         )
 
     async def get_active_coupon(self, user_id: int) -> WheelCoupon | None:
@@ -451,9 +463,12 @@ class SQLiteRepository(Repository):
             created_at=row["created_at"],
         )
 
-    async def mark_coupon_used(self, coupon_id: int) -> None:
+    async def mark_coupon_used(self, coupon_id: int, user_id: int) -> None:
         conn = self._require_conn()
-        await conn.execute("UPDATE wheel_coupons SET used = 1 WHERE id = ?", (coupon_id,))
+        await conn.execute(
+            "UPDATE wheel_coupons SET used = 1 WHERE id = ? AND user_id = ?",
+            (coupon_id, user_id),
+        )
         await conn.commit()
 
     # ---------- подписки ----------
@@ -513,26 +528,16 @@ class SQLiteRepository(Repository):
         plan_days: int,
         discount_pct: int,
     ) -> Payment:
-        existing = await self.find_payment(telegram_payment_id)
-        if existing is not None:
-            return existing
         conn = self._require_conn()
-        cursor = await conn.execute(
-            "INSERT INTO payments (telegram_payment_id, user_id, amount, currency, plan_days, discount_pct, created_at) "
+        now = _now()
+        await conn.execute(
+            "INSERT OR IGNORE INTO payments "
+            "(telegram_payment_id, user_id, amount, currency, plan_days, discount_pct, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (telegram_payment_id, user_id, amount, currency, plan_days, discount_pct, _now()),
+            (telegram_payment_id, user_id, amount, currency, plan_days, discount_pct, now),
         )
         await conn.commit()
-        return Payment(
-            id=cursor.lastrowid,
-            telegram_payment_id=telegram_payment_id,
-            user_id=user_id,
-            amount=amount,
-            currency=currency,
-            plan_days=plan_days,
-            discount_pct=discount_pct,
-            created_at=_now(),
-        )
+        return await self.find_payment(telegram_payment_id)
 
     async def find_payment(self, telegram_payment_id: str) -> Payment | None:
         conn = self._require_conn()
@@ -739,15 +744,22 @@ class SQLiteRepository(Repository):
             (lesson_id,),
         )
         rows = await cursor.fetchall()
-        return [
-            {
+        result = []
+        for row in rows:
+            raw = row["is_correct"]
+            if raw is None:
+                is_correct = None
+            elif raw:
+                is_correct = True
+            else:
+                is_correct = False
+            result.append({
                 "content": row["content"],
-                "is_correct": bool(row["is_correct"]),
+                "is_correct": is_correct,
                 "issues_json": row["issues_json"] or "",
                 "corrected_text": row["corrected_text"] or "",
-            }
-            for row in rows
-        ]
+            })
+        return result
 
     async def get_stats(self, user_id: int) -> Stats:
         conn = self._require_conn()
@@ -1055,13 +1067,18 @@ class SQLiteRepository(Repository):
 
     async def save_topic_proposals(self, user_id: int, proposals: list[TopicProposal]) -> None:
         conn = self._require_conn()
-        await conn.execute("DELETE FROM topic_proposals WHERE user_id = ?", (user_id,))
-        for p in proposals:
-            await conn.execute(
-                "INSERT INTO topic_proposals (user_id, topic, description, created_at) VALUES (?, ?, ?, ?)",
-                (user_id, p.topic, p.description, p.created_at or _now()),
-            )
-        await conn.commit()
+        await conn.execute("BEGIN")
+        try:
+            await conn.execute("DELETE FROM topic_proposals WHERE user_id = ?", (user_id,))
+            for p in proposals:
+                await conn.execute(
+                    "INSERT INTO topic_proposals (user_id, topic, description, created_at) VALUES (?, ?, ?, ?)",
+                    (user_id, p.topic, p.description, p.created_at or _now()),
+                )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
 
     async def get_topic_proposal(self, proposal_id: int) -> TopicProposal | None:
         conn = self._require_conn()
@@ -1205,7 +1222,9 @@ class SQLiteRepository(Repository):
              word.ease_factor, word.correct_count, word.last_reviewed, word.created_at),
         )
         await conn.commit()
-        return cursor.lastrowid or 0
+        if cursor.rowcount == 1:
+            return cursor.lastrowid
+        return None
 
     async def get_srs_word(self, user_id: int, word: str) -> SRSWord | None:
         conn = self._require_conn()
@@ -1337,13 +1356,18 @@ class SQLiteRepository(Repository):
 
     async def save_shown_achievements(self, user_id: int, achievement_ids: list[str]) -> None:
         conn = self._require_conn()
-        await conn.execute("DELETE FROM user_achievements WHERE user_id = ?", (user_id,))
-        for aid in achievement_ids:
-            await conn.execute(
-                "INSERT OR IGNORE INTO user_achievements (user_id, achievement_id) VALUES (?, ?)",
-                (user_id, aid),
-            )
-        await conn.commit()
+        await conn.execute("BEGIN")
+        try:
+            await conn.execute("DELETE FROM user_achievements WHERE user_id = ?", (user_id,))
+            for aid in achievement_ids:
+                await conn.execute(
+                    "INSERT OR IGNORE INTO user_achievements (user_id, achievement_id) VALUES (?, ?)",
+                    (user_id, aid),
+                )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
 
     async def _calc_streak(self, user_id: int) -> int:
         """Считает стрик (дни подряд) для пользователя."""
@@ -1372,10 +1396,6 @@ class SQLiteRepository(Repository):
             except ValueError:
                 continue
             if d == expected:
-                streak += 1
-                expected -= timedelta(days=1)
-            elif d == expected - timedelta(days=1):
-                expected = d
                 streak += 1
                 expected -= timedelta(days=1)
             else:
