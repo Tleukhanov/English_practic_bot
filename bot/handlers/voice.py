@@ -25,7 +25,7 @@ from storage.repo import Repository
 from core.lessons import LESSON_STEPS
 from ..diagnostic import process_diagnostic_answer
 from ..flow import get_or_create_user, practice_markup, run_practice
-from ..keyboards import lesson_keyboard, lesson_recap_keyboard
+from ..keyboards import lesson_keyboard, lesson_recap_keyboard, premium_upsell_keyboard
 from ..quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 from ..utils import escape
 
@@ -176,7 +176,10 @@ async def on_voice(
             quota=quota,
         )
     except QuotaExceeded:
-        await status.edit_text(f"{prefix}\n\n{QUOTA_EXCEEDED_TEXT}")
+        await status.edit_text(
+            f"{prefix}\n\n{QUOTA_EXCEEDED_TEXT}",
+            reply_markup=premium_upsell_keyboard(),
+        )
         return
     except PracticeParseError as exc:
         logger.warning("Не удалось разобрать ответ LLM: %s", exc)

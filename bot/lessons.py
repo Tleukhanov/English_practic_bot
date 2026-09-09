@@ -36,7 +36,7 @@ from core.profile import merge_weak_areas, to_profile_snippet
 from storage.repo import LessonNote, Repository, TopicProposal, UserProfile
 
 from .formatters import format_lesson_note, format_lesson_step, format_return_hook
-from .keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu, topic_proposals_keyboard
+from .keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu, premium_upsell_keyboard, topic_proposals_keyboard
 from .quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 from .utils import escape
 from .achievements import announce_new_achievements
@@ -191,7 +191,7 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
         try:
             await quota.check(user.id)
         except QuotaExceeded:
-            await target.answer(QUOTA_EXCEEDED_TEXT)
+            await target.answer(QUOTA_EXCEEDED_TEXT, reply_markup=premium_upsell_keyboard())
             return
 
     status = await target.answer("⏳ Составляю структурированный урок...")
@@ -279,7 +279,7 @@ async def cb_select_topic(
         try:
             await quota.check(user.id)
         except QuotaExceeded:
-            await callback.message.answer(QUOTA_EXCEEDED_TEXT)
+            await callback.message.answer(QUOTA_EXCEEDED_TEXT, reply_markup=premium_upsell_keyboard())
             return
 
     status = await callback.message.answer("⏳ Составляю урок...")

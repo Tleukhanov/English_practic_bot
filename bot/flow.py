@@ -17,6 +17,7 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.config import Settings
+from core.analytics import track_event
 from core.models import PracticeResult
 from core.characters import character_prompt
 from core.practice import PracticeParseError, PracticeService
@@ -26,7 +27,8 @@ from storage.repo import Repository, UserProfile, UserRow
 
 from .quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 from .formatters import format_practice_result, format_practice_soft, format_reveal
-from .keyboards import reveal_keyboard
+from .keyboards import premium_upsell_keyboard, reveal_keyboard
+from .handlers.premium import premium_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +228,7 @@ async def answer_practice(
             quota=quota,
         )
     except QuotaExceeded:
-        await message.answer(QUOTA_EXCEEDED_TEXT)
+        await message.answer(QUOTA_EXCEEDED_TEXT, reply_markup=premium_upsell_keyboard())
         return
     except PracticeParseError as exc:
         logger.warning("Не удалось разобрать ответ LLM: %s", exc)
@@ -284,3 +286,31 @@ async def cb_practice_reveal(callback: CallbackQuery, repo: Repository) -> None:
             await callback.answer("Устарело, отправь фразу заново")
         except Exception:
             pass
+
+
+@router.callback_query(F.data == "premium:open")
+async def cb_premium_open(callback: CallbackQuery, repo: Repository, settings: Settings, quota: QuotaGuard) -> None:
+    """Кнопка «💎 Подписка» в главном меню — открывает экран /premium."""
+    await callback.answer()
+    user = await get_or_create_user(callback.message, repo)
+    await track_event(repo, user.id, "premium_screen_shown")
+    lines: list[str] = ["💎 <b>Лимиты и подписка</b>\n"]
+    sub = await repo.get_subscription(user.id)
+    if sub and sub.is_active:
+        lines.append(f"✅ Подписка активна: {sub.plan_days} дн., до {sub.expires_at[:10]}")
+    else:
+        lines.append("➖ Подписки нет — действует дневной лимит.")
+    if await repo.get_unlimited_status(user.id):
+        lines.append("♾️ Промокод: <b>безлимит</b> активен")
+    if settings.llm_daily_limit > 0:
+        used = await repo.get_llm_usage(user.id, quota._today())
+        lines.append(f"📊 ИИ-действий сегодня: {used}/{settings.llm_daily_limit}")
+    extra = await repo.get_extra_actions(user.id)
+    lines.append(f"🎁 Бонусных действий сверх лимита: {extra}")
+    coupon = await repo.get_active_coupon(user.id)
+    if coupon and not coupon.is_expired:
+        lines.append(f"🎟 Купон на скидку {coupon.discount_pct}% при покупке!")
+    await callback.message.answer(
+        "\n".join(lines),
+        reply_markup=premium_keyboard(settings.subscription_plan_list, coupon=coupon),
+    )
