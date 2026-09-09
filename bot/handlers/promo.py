@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 
 from aiogram import Router
@@ -36,7 +37,7 @@ async def cmd_promo(message: Message, repo: Repository, settings: Settings) -> N
     if not code:
         await message.answer("📮 Отправь промокод так: /promo ТВОЙ_КОД")
         return
-    if code.lower() == expected.lower():
+    if hmac.compare_digest(code.lower().encode("utf-8"), expected.lower().encode("utf-8")):
         await repo.set_unlimited_status(user.id, True)
         await message.answer(PROMO_ACTIVATED_TEXT, reply_markup=main_menu())
         logger.info("Промокод активирован: user=%s", user.id)

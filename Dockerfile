@@ -26,10 +26,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+# Бот работает под непривилегированным пользователем (uid 10001)
+RUN useradd -r -u 10001 -m botuser \
+    && mkdir -p /data \
+    && chown -R botuser:botuser /data
+
 COPY --from=builder /deps /usr/local
 COPY . /app
+RUN chown -R botuser:botuser /app
 
-RUN mkdir -p /data && chmod -R 777 /data
+USER botuser
 
 EXPOSE 8080
 

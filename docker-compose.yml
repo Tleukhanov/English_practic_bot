@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: english_bot
     restart: unless-stopped
+    init: true
     env_file:
       - .env
     environment:
@@ -12,6 +13,8 @@ services:
       - HF_HOME=/data/hf_cache
     volumes:
       - ./data:/data
+    mem_limit: 2g
+    cpus: "2.0"
     healthcheck:
       test: ["CMD", "python", "-c", "import sqlite3, os; sqlite3.connect(os.environ.get('DATABASE_PATH', '/data/english_bot.db')).execute('SELECT 1')"]
       interval: 60s
