@@ -1,7 +1,7 @@
 """Tests for Phase 11 — Scheduler (reminders)."""
 
 import pytest
-from core.scheduler import _build_reminder_message
+from core.scheduler import _build_expiry_message, _build_reminder_message, ReminderDedupe
 from core.retention import RetentionInfo
 
 
@@ -76,3 +76,32 @@ def test_build_reminder_no_streak():
     msg = _build_reminder_message("Anna", info)
     assert msg is not None
     assert "Серия" not in msg
+
+
+def test_build_expiry_message_contains_expiry_and_premium():
+    msg = _build_expiry_message("2026-09-10T12:00:00+00:00", 7)
+    assert "истекает" in msg
+    assert "/premium" in msg
+
+
+def test_build_expiry_message_shows_date_and_days():
+    msg = _build_expiry_message("2026-09-10T12:00:00+00:00", 30)
+    assert "2026-09-10" in msg
+    assert "30" in msg
+
+
+def test_reminder_dedupe_first_send_true():
+    d = ReminderDedupe()
+    assert d.should_send(1, "2026-09-10T12:00:00+00:00") is True
+
+
+def test_reminder_dedupe_same_expiry_false():
+    d = ReminderDedupe()
+    assert d.should_send(1, "2026-09-10T12:00:00+00:00") is True
+    assert d.should_send(1, "2026-09-10T12:00:00+00:00") is False
+
+
+def test_reminder_dedupe_different_expiry_true():
+    d = ReminderDedupe()
+    assert d.should_send(1, "2026-09-10T12:00:00+00:00") is True
+    assert d.should_send(1, "2026-09-11T12:00:00+00:00") is True
