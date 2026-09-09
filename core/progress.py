@@ -137,7 +137,7 @@ class ProgressService:
         dates = sorted(dates_set, reverse=True)
         today = datetime.now(timezone.utc).date()
 
-        if dates[0] != today and dates[0] != today - timedelta(days=1):
+        if dates[0] != today:
             return 0
 
         streak = 1

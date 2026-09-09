@@ -308,7 +308,7 @@ async def test_coupon_roundtrip_and_usage(repo):
     assert coupon.id > 0
     active = await repo.get_active_coupon(user.id)
     assert active is not None and active.discount_pct == 20
-    await repo.mark_coupon_used(coupon.id)
+    await repo.mark_coupon_used(coupon.id, user.id)
     assert await repo.get_active_coupon(user.id) is None
 
 
