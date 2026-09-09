@@ -90,6 +90,8 @@ async def cb_kaspi_pay(callback: CallbackQuery, repo: Repository, settings: Sett
         purchase = await repo.create_order(
             user.id, days, final, discount, coupon_id, order_code=_make_order_code()
         )
+        if coupon_id > 0:
+            await repo.mark_coupon_used(coupon_id, user.id)
     elif purchase.plan_days != days:
         await repo.cancel_order(purchase.id)
         coupon = await repo.get_active_coupon(user.id)
@@ -100,6 +102,8 @@ async def cb_kaspi_pay(callback: CallbackQuery, repo: Repository, settings: Sett
         purchase = await repo.create_order(
             user.id, days, final, discount, coupon_id, order_code=_make_order_code()
         )
+        if coupon_id > 0:
+            await repo.mark_coupon_used(coupon_id, user.id)
         logger.info("Kaspi-заказ заменён: user=%s new_days=%s", user.id, days)
 
     text = (
@@ -151,7 +155,8 @@ async def cb_kaspi_cancel(callback: CallbackQuery, repo: Repository) -> None:
         return
     await repo.cancel_order(purchase.id)
     await callback.message.edit_text(
-        "❌ Заказ отменён. Если передумаешь — загляни в /premium 😉"
+        "❌ Заказ отменён. Если использовалась скидка — она уже применена к этому заказу и "
+        "потеряна. Если передумаешь — загляни в /premium 😉"
     )
     logger.info("Kaspi-заказ отменён: user=%s order=%s", user.id, purchase.id)
 
