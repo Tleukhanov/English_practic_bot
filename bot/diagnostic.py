@@ -24,7 +24,7 @@ from storage.repo import Repository
 
 from .flow import get_or_create_user
 from .formatters import format_diagnostic_question, format_level_result
-from .keyboards import diagnostic_keyboard, main_menu
+from .keyboards import diagnostic_keyboard, main_menu, premium_upsell_keyboard
 from .quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 
 router = Router()
@@ -153,7 +153,7 @@ async def _start_diagnostic(target, repo: Repository, diagnostic_service: Diagno
         try:
             await quota.check(user.id)
         except QuotaExceeded:
-            await target.answer(QUOTA_EXCEEDED_TEXT)
+            await target.answer(QUOTA_EXCEEDED_TEXT, reply_markup=premium_upsell_keyboard())
             return
 
     status = await target.answer("⏳ Составляю диагностические задания...")

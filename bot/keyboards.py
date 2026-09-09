@@ -18,6 +18,7 @@ def _base_menu_rows(due_words: int = 0) -> list[list[InlineKeyboardButton]]:
             InlineKeyboardButton(text="🏅 Рейтинг", callback_data="leaderboard"),
         ],
         [InlineKeyboardButton(text="🎡 Колесо удачи", callback_data="wheel:start")],
+        [InlineKeyboardButton(text="💎 Подписка", callback_data="premium:open")],
         [
             InlineKeyboardButton(text="📚 Подготовка к экзамену", callback_data="exam_prep"),
             InlineKeyboardButton(text="📮 Связь с разработчиком", callback_data="contact_dev"),
@@ -35,6 +36,15 @@ def main_menu() -> InlineKeyboardMarkup:
 def main_menu_with_srs(due_words: int = 0) -> InlineKeyboardMarkup:
     """Главное меню с указанием количества слов для повторения."""
     return InlineKeyboardMarkup(inline_keyboard=_base_menu_rows(due_words))
+
+
+def premium_upsell_keyboard(days: int = 7) -> InlineKeyboardMarkup:
+    """Клавиатура-апселл при исчерпании квоты: кнопка покупки подписки."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Купить подписку", callback_data=f"premium:buy:{days}")],
+        ]
+    )
 
 
 def lesson_keyboard() -> InlineKeyboardMarkup:
