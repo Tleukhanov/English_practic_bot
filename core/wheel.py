@@ -37,6 +37,8 @@ WHEEL_SECTORS: tuple[tuple[str, int], ...] = (
 
 # большой приз = скидка 20/30%, +50 действий, джекпот
 BIG_PRIZES: tuple[str, ...] = (DISCOUNT_20, DISCOUNT_30, ACTIONS_50, JACKPOT)
+# приз, который гарантирует pity-счётчик (после сухой серии)
+BIG_PRIZE_KINDS: tuple[str, ...] = BIG_PRIZES
 PITY_THRESHOLD = 7  # 7 сухих круток подряд — и большой приз гарантирован
 COUPON_TTL_HOURS = 24  # срок жизни купона со скидкой
 
@@ -78,14 +80,14 @@ class WheelCooldown(Exception):
 class WheelService:
     """Сервис колеса удачи.
 
-    Счётчик сухих круток (`self._dry_spins`) живёт в памяти сервиса и
-    сбрасывается при рестарте процесса — отдельной таблицы под него пока нет.
+    Счётчик сухих круток (`dry_streak`) хранится в БД на пользователя
+    (столбец user_balances.dry_streak), поэтому pity переживает перезапуск
+    процесса и работает одинаково на любых инстансах сервиса.
     """
 
     def __init__(self, repo, rng: random.Random | None = None):
         self._repo = repo
         self._rng = rng or random.Random()
-        self._dry_spins = 0
 
     @staticmethod
     def today() -> str:
@@ -97,20 +99,32 @@ class WheelService:
         return last != self.today()
 
     async def spin(self, user_id: int) -> WheelPrize:
-        """Крутка на сегодня. Приз применяется, крутка всегда списывается."""
+        """Крутка на сегодня. Приз применяется, крутка всегда списывается.
+
+        Спин атомарен: сначала фиксируем крутку в БД (INSERT ... ON CONFLICT
+        DO NOTHING). Если сегодня уже было записано — крутка уже была, и мы
+        НЕ применяем приз повторно (бросаем WheelCooldown). Это защищает от
+        двойных бонусов при двух одновременных нажатиях.
+        """
         if not await self.is_spin_available(user_id):
             raise WheelCooldown("Крутка доступна раз в сутки: сегодня уже крутил")
 
+        inserted = await self._repo.save_spin(user_id, self.today())
+        if not inserted:
+            # Кто-то уже успел записать крутку — сегодняшняя уже потрачена.
+            raise WheelCooldown("Крутка доступна раз в сутки: сегодня уже крутил")
+
         kind = await self._pick_kind(user_id)
-        await self._repo.save_spin(user_id, self.today())
         return await self._apply_prize(user_id, kind)
 
     async def _pick_kind(self, user_id: int) -> str:
         sub = await self._repo.get_subscription(user_id)
         is_subscriber = sub is not None and sub.is_active
 
-        if self._dry_spins >= PITY_THRESHOLD:
-            kind = self._rng.choice(BIG_PRIZES)
+        dry_streak = await self._repo.get_dry_streak(user_id)
+
+        if dry_streak >= PITY_THRESHOLD:
+            kind = self._rng.choice(BIG_PRIZE_KINDS)
         else:
             kind = self._pick_weighted()
 
@@ -118,9 +132,9 @@ class WheelService:
         kind = self._translate_for_subscriber(kind, is_subscriber)
 
         if kind in BIG_PRIZES:
-            self._dry_spins = 0
+            await self._repo.set_dry_streak(user_id, 0)
         else:
-            self._dry_spins += 1
+            await self._repo.set_dry_streak(user_id, dry_streak + 1)
         return kind
 
     def _pick_weighted(self) -> str:
