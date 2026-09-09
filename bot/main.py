@@ -27,6 +27,7 @@ from .config import get_settings
 from .diagnostic import router as diagnostic_router
 from .flow import router as practice_router
 from .quota import QuotaGuard
+from .rate_limit import LLMThrottle
 from .handlers import menu, profile, start, text, voice
 from .handlers.character import router as character_router
 from .handlers.interests import router as interests_router
@@ -119,6 +120,8 @@ async def main() -> None:
     dp["tts"] = tts
     dp["settings"] = settings
     dp["quota"] = QuotaGuard(repo, settings.llm_daily_limit)
+
+    dp.message.outer_middleware(LLMThrottle())
 
     dp.include_router(onboarding_router)
     dp.include_router(start.router)
