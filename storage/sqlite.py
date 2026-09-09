@@ -133,7 +133,8 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 
 CREATE TABLE IF NOT EXISTS user_balances (
     user_id INTEGER PRIMARY KEY REFERENCES users(id),
-    extra_actions INTEGER NOT NULL DEFAULT 0
+    extra_actions INTEGER NOT NULL DEFAULT 0,
+    dry_streak INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS wheel_spins (
@@ -268,6 +269,13 @@ class SQLiteRepository(Repository):
                 PRIMARY KEY (user_id, achievement_id)
             )
         """)
+
+        cursor = await self._conn.execute("PRAGMA table_info(user_balances)")
+        bal_cols = {row["name"] for row in await cursor.fetchall()}
+        if "dry_streak" not in bal_cols:
+            await self._conn.execute(
+                "ALTER TABLE user_balances ADD COLUMN dry_streak INTEGER NOT NULL DEFAULT 0"
+            )
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -415,12 +423,31 @@ class SQLiteRepository(Repository):
         row = await cursor.fetchone()
         return row["date"] if row else None
 
-    async def save_spin(self, user_id: int, date: str) -> None:
+    async def save_spin(self, user_id: int, date: str) -> bool:
         conn = self._require_conn()
-        await conn.execute(
+        cursor = await conn.execute(
             "INSERT INTO wheel_spins (user_id, date) VALUES (?, ?) "
             "ON CONFLICT(user_id, date) DO NOTHING",
             (user_id, date),
+        )
+        await conn.commit()
+        return cursor.rowcount == 1
+
+    async def get_dry_streak(self, user_id: int) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT dry_streak FROM user_balances WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return row["dry_streak"] if row else 0
+
+    async def set_dry_streak(self, user_id: int, streak: int) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "INSERT INTO user_balances (user_id, dry_streak) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET dry_streak = excluded.dry_streak",
+            (user_id, max(0, streak)),
         )
         await conn.commit()
 
