@@ -79,6 +79,22 @@ async def test_grant_burns_coupon(repo):
     assert active is None
 
 
+async def test_coupon_burned_on_order_creation_cannot_be_reused(repo):
+    """Скидочный купон сгорает при создании заказа, поэтому не переиспользуется."""
+    user = await repo.get_or_create_user(2009)
+    coupon = await repo.create_coupon(user.id, 20, "2099-01-01")
+
+    first = await repo.create_order(user.id, 7, 1592, 20, coupon.id, _make_order_code())
+    assert coupon.id > 0
+    await repo.mark_coupon_used(first.coupon_id, user.id)
+
+    assert await repo.get_active_coupon(user.id) is None
+
+    second = await repo.create_order(user.id, 7, 1990, 0, 0, _make_order_code())
+    assert second.coupon_id == 0
+    assert await repo.get_active_coupon(user.id) is None
+
+
 async def test_reject_cancels_without_grant(repo):
     user = await repo.get_or_create_user(2007)
     order = await repo.create_order(user.id, 1, 990, 0, 0, _make_order_code())
