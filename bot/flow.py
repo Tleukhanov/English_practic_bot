@@ -1,4 +1,10 @@
-"""Общая логика одной «практики» — используется текстовым и голосовым хэндлерами."""
+"""Общая логика одной «практики» — используется текстовым и голосовым хэндлерами.
+
+Квота (QuotaGuard) проверяется ДО LLM-вызова, а списание (consume) — ПОСЛЕ
+успешного завершения. Фоновые задачи (профиль) пропускают работу при
+QuotaExceeded, чтобы не тратить квоту пользователя впустую и не ронять
+основной поток.
+"""
 
 from __future__ import annotations
 
@@ -94,20 +100,31 @@ async def _update_profile_background(
     text: str,
     repo: Repository,
     profile_service: ProfileService,
+    quota: QuotaGuard | None = None,
 ) -> None:
     """Фоновое обновление профиля пользователя (Фаза 4).
 
     Базой для диффа берём профиль на МОМЕНТ запуска задачи (свежий), а не
     снапшот на момент реплики. Лок на юзера не даёт гонкам перезаписать друг друга.
     Ошибки не роняют основной поток.
+
+    Квота: если у пользователя не осталось бюджета (QuotaExceeded), фоновое
+    обновление просто пропускается (лог на debug) — не тратим ресурсы и не
+    беспокоим пользователя. В противном случае после успеха списываем квоту.
     """
     try:
+        if quota is not None:
+            await quota.check(user_id)
         async with _profile_lock(user_id):
             previous = await repo.get_profile(user_id)
             dialogue = history + [{"role": "user", "content": text}]
             updated = await profile_service.update(user_id, previous, dialogue)
             await repo.save_profile(updated)
+            if quota is not None:
+                await quota.consume(user_id)
             logger.info("Профиль обновлён: user=%s", user_id)
+    except QuotaExceeded:
+        logger.debug("Профиль не обновлён (квота исчерпана): user=%s", user_id)
     except Exception:
         logger.exception("Не удалось обновить профиль пользователя %s", user_id)
 
@@ -132,7 +149,7 @@ async def run_practice(
     """
     user = await get_or_create_user(message, repo)
     if quota is not None:
-        await quota.consume(user.id)
+        await quota.check(user.id)
     profile = await repo.get_profile(user.id)
     # Профиль должен существовать, иначе новичок потеряет и интересы, и слабые места.
     if profile is None:
@@ -170,8 +187,11 @@ async def run_practice(
 
     if profile_service is not None and profile_update_due(profile):
         asyncio.create_task(
-            _update_profile_background(user.id, history, text, repo, profile_service)
+            _update_profile_background(user.id, history, text, repo, profile_service, quota=quota)
         )
+
+    if quota is not None:
+        await quota.consume(user.id)
 
     return PracticeTurn(reply=reply, result=result, message_id=msg_id)
 

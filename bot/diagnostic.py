@@ -48,12 +48,16 @@ async def _assess_and_finish(
     session,
     quota: QuotaGuard | None = None,
 ) -> None:
-    """Оценивает уровень по ответам, сохраняет его и закрывает сессию диагностики."""
+    """Оценивает уровень по ответам, сохраняет его и закрывает сессию диагностики.
+
+    Квота: check() до LLM-вызова, consume() после успешной оценки. При исчерпании
+    лимита уровень оцениваем эвристикой (бесплатно).
+    """
     questions = diagnostic_tasks_from_json(session.questions_json)
     answers = _answers_of(session)
     if quota is not None:
         try:
-            await quota.consume(session.user_id)
+            await quota.check(session.user_id)
         except QuotaExceeded:
             assessment = DiagnosticAssessment(level=estimate_level_heuristic(answers))
             await repo.set_level(session.user_id, assessment.level)
@@ -64,6 +68,8 @@ async def _assess_and_finish(
     try:
         assessment = await diagnostic_service.assess(questions, answers)
         estimated = False
+        if quota is not None:
+            await quota.consume(session.user_id)
     except Exception as exc:
         logger.exception("Ошибка оценки уровня: %s", exc)
         assessment = DiagnosticAssessment(level=estimate_level_heuristic(answers))
@@ -145,7 +151,7 @@ async def _start_diagnostic(target, repo: Repository, diagnostic_service: Diagno
 
     if quota is not None:
         try:
-            await quota.consume(user.id)
+            await quota.check(user.id)
         except QuotaExceeded:
             await target.answer(QUOTA_EXCEEDED_TEXT)
             return
@@ -160,6 +166,8 @@ async def _start_diagnostic(target, repo: Repository, diagnostic_service: Diagno
     if not tasks:
         await status.edit_text("🤔 Не удалось составить задания. Попробуй ещё раз.")
         return
+    if quota is not None:
+        await quota.consume(user.id)
 
     session = await repo.start_diagnostic(user.id, diagnostic_tasks_to_json(tasks))
     await status.edit_text(
