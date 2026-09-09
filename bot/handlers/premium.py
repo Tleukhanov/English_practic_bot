@@ -8,6 +8,8 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from core.analytics import track_event
+
 from bot.config import Settings
 from storage.repo import Repository
 
@@ -54,6 +56,7 @@ async def cmd_premium(
         username=message.from_user.username,
         first_name=message.from_user.first_name,
     )
+    await track_event(repo, user.id, "premium_screen_shown")
     lines: list[str] = ["💎 <b>Лимиты и подписка</b>\n"]
     sub = await repo.get_subscription(user.id)
     if sub and sub.is_active:
@@ -95,6 +98,7 @@ async def cb_premium_buy(callback: CallbackQuery, repo: Repository, settings: Se
         username=callback.from_user.username,
         first_name=callback.from_user.first_name,
     )
+    await track_event(repo, user.id, "premium_buy_clicked", {"days": days})
     price = plan[1]
     coupon = await repo.get_active_coupon(user.id)
     discount = 0

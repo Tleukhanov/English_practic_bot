@@ -40,6 +40,7 @@ from .handlers.promo import router as promo_router
 from .handlers.wheel import router as wheel_router
 from .handlers.premium import router as premium_router
 from .handlers.kaspi import router as kaspi_router
+from .handlers.admin import router as admin_router
 from .lessons import router as lessons_router
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ COMMANDS = [
     BotCommand(command="promo", description="🎟 Промокод на безлимит"),
     BotCommand(command="wheel", description="🎡 Колесо удачи"),
     BotCommand(command="premium", description="💳 Подписка (Kaspi QR)"),
+    BotCommand(command="admin", description="⚙️ Админ"),
     BotCommand(command="help", description="Помощь"),
 ]
 
@@ -140,6 +142,7 @@ async def main() -> None:
     dp.include_router(wheel_router)
     dp.include_router(premium_router)
     dp.include_router(kaspi_router)
+    dp.include_router(admin_router)
     dp.include_router(text.router)
     dp.include_router(voice.router)
 

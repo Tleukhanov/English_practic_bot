@@ -192,6 +192,16 @@ CREATE TABLE IF NOT EXISTS kaspi_orders (
 CREATE INDEX IF NOT EXISTS idx_kaspi_orders_user ON kaspi_orders(user_id, id);
 
 CREATE INDEX IF NOT EXISTS idx_kaspi_orders_pending ON kaspi_orders(user_id, status) WHERE status = 'pending';
+
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    event_type TEXT NOT NULL,
+    payload TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_user_type ON events(user_id, event_type);
 """
 
 
@@ -680,6 +690,64 @@ class SQLiteRepository(Repository):
             (KaspiOrder.STATUS_CANCELLED, order_id, KaspiOrder.STATUS_PENDING),
         )
         await conn.commit()
+
+    # ---------- аналитика (события) ----------
+
+    async def append_event(self, user_id: int, event_type: str, payload=None) -> None:
+        conn = self._require_conn()
+        payload_text = json.dumps(payload, ensure_ascii=False) if payload is not None else ""
+        await conn.execute(
+            "INSERT INTO events (user_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, event_type, payload_text, _now()),
+        )
+        await conn.commit()
+
+    async def count_events(self, event_type: str, since_date: str) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT COUNT(*) AS cnt FROM events WHERE event_type = ? AND created_at >= ?",
+            (event_type, since_date),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
+    # ---------- админ-статистика ----------
+
+    async def count_spins_today(self, date: str) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT COUNT(*) AS cnt FROM wheel_spins WHERE date = ?",
+            (date,),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
+    async def count_pending_orders(self) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT COUNT(*) AS cnt FROM kaspi_orders WHERE status = ?",
+            (KaspiOrder.STATUS_PENDING,),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
+    async def sum_revenue(self) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) AS total FROM kaspi_orders WHERE status = ?",
+            (KaspiOrder.STATUS_APPROVED,),
+        )
+        row = await cursor.fetchone()
+        return row["total"] if row else 0
+
+    async def count_active_subscriptions(self) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT COUNT(*) AS cnt FROM subscriptions WHERE expires_at > ?",
+            (_now(),),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
 
     async def get_profile(self, user_id: int) -> UserProfile | None:
         conn = self._require_conn()

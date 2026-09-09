@@ -10,6 +10,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from core.analytics import track_event
 from core.wheel import (
     JACKPOT,
     SECTOR_TITLES,
@@ -120,6 +121,7 @@ async def cb_wheel_spin(callback: CallbackQuery, repo: Repository) -> None:
 
         status = await callback.message.edit_text("🎡 Крутим колесо...", reply_markup=None)
         prize = await service.spin(user.id)
+        await track_event(repo, user.id, "wheel_spin", prize.kind)
         await _animate(status)
         await status.edit_text(format_wheel_prize(prize), reply_markup=main_menu())
         await callback.answer()

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from core.analytics import track_event
 from storage.repo import Repository
 
 QUOTA_EXCEEDED_TEXT = (
@@ -53,6 +54,7 @@ class QuotaGuard:
         extra = await self._repo.get_extra_actions(user_id)
         if extra > 0:
             return
+        await track_event(self._repo, user_id, "quota_hit")
         raise QuotaExceeded(f"квота исчерпана: {used}/{self._daily_limit}")
 
     async def consume(self, user_id: int, *, cost: int = 1) -> None:

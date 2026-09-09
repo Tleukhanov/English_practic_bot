@@ -19,6 +19,8 @@ from aiogram.types import (
     Message,
 )
 
+from core.analytics import track_event
+
 from bot.config import Settings
 from storage.repo import KaspiOrder, Repository, Subscription
 
@@ -57,6 +59,7 @@ async def _grant_order(repo: Repository, order: KaspiOrder) -> Subscription | No
         coupon = await repo.get_active_coupon(order.user_id)
         if coupon is not None and coupon.id == order.coupon_id:
             await repo.mark_coupon_used(order.coupon_id, order.user_id)
+    await track_event(repo, order.user_id, "kaspi_order_approved")
     logger.info("Kaspi-подписка выдана: user=%s days=%s order=%s", order.user_id, order.plan_days, order.id)
     return subscription
 
@@ -105,6 +108,8 @@ async def cb_kaspi_pay(callback: CallbackQuery, repo: Repository, settings: Sett
         if coupon_id > 0:
             await repo.mark_coupon_used(coupon_id, user.id)
         logger.info("Kaspi-заказ заменён: user=%s new_days=%s", user.id, days)
+
+    await track_event(repo, user.id, "kaspi_order_created", {"days": purchase.plan_days, "amount": purchase.amount})
 
     text = (
         f"💳 Оплати по Kaspi QR: <b>{purchase.amount}₸</b> за {purchase.plan_days} дн."
@@ -205,8 +210,10 @@ async def on_check_photo(message: Message, repo: Repository, settings: Settings)
 
     photo_file_id = message.photo[-1].file_id
     await repo.attach_photo(purchase.id, photo_file_id)
+    await track_event(repo, user.id, "kaspi_photo_submitted")
     await message.answer(
-        f"✅ Чек получен ({purchase.amount}₸, {purchase.order_code}). Проверяем, пару минут…"
+        f"✅ Чек получен ({purchase.amount}₸, {purchase.order_code}). "
+        "Проверяем, обычно до 30 минут… Если задержка — напиши " + FALLBACK_DEVELOPER
     )
 
     if not settings.admin_tg_id:
@@ -279,6 +286,7 @@ async def cb_kaspi_reject(callback: CallbackQuery, repo: Repository, settings: S
         await callback.answer("Заказ уже обработан.")
         return
     await repo.cancel_order(order.id)
+    await track_event(repo, order.user_id, "kaspi_order_rejected")
     await callback.answer("Оплата отклонена ❌")
     try:
         await callback.message.delete()
