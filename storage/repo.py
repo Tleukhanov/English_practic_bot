@@ -351,6 +351,28 @@ class Repository(ABC):
     @abstractmethod
     async def cancel_order(self, order_id: int) -> None: ...
 
+    # ---------- аналитика (события) ----------
+
+    @abstractmethod
+    async def append_event(self, user_id: int, event_type: str, payload=None) -> None: ...
+
+    @abstractmethod
+    async def count_events(self, event_type: str, since_date: str) -> int: ...
+
+    # ---------- админ-статистика ----------
+
+    @abstractmethod
+    async def count_spins_today(self, date: str) -> int: ...
+
+    @abstractmethod
+    async def count_pending_orders(self) -> int: ...
+
+    @abstractmethod
+    async def sum_revenue(self) -> int: ...
+
+    @abstractmethod
+    async def count_active_subscriptions(self) -> int: ...
+
     @abstractmethod
     async def get_profile(self, user_id: int) -> UserProfile | None: ...
 
