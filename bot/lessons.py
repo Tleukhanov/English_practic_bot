@@ -42,7 +42,15 @@ from core.profile import merge_weak_areas, to_profile_snippet
 from storage.repo import LessonNote, LessonPlanRow, Repository, TopicProposal, UserProfile
 
 from .formatters import format_lesson_note, format_lesson_plan, format_lesson_step, format_return_hook
-from .keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu, premium_upsell_keyboard, topic_proposals_keyboard
+from .keyboards import (
+    get_webapp_url,
+    lesson_keyboard,
+    lesson_recap_keyboard,
+    main_menu,
+    miniapp_lesson_keyboard,
+    premium_upsell_keyboard,
+    topic_proposals_keyboard,
+)
 from .quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 from .utils import escape
 from .achievements import announce_new_achievements
@@ -241,6 +249,32 @@ def next_lesson_position(step: int, task_index: int, total_tasks: int) -> tuple[
 
 _LAST_LESSON_TYPE: str | None = None
 
+MINIAPP_OFFER_TEXT = (
+    "🚀 <b>Интерактивный урок в Mini App</b>\n\n"
+    "Презентация, карточки слов с озвучкой, квиз с мгновенной проверкой и живой диалог "
+    "с персонажем — прямо в Telegram.\n\n"
+    "Или оставь классический урок в чате — как раньше."
+)
+
+MINIAPP_DISABLED_TEXT = "📱 Mini App пока не настроен на сервере. Урок в чате: /lesson"
+
+
+async def _answer_miniapp_offer(message: Message, settings=None) -> bool:
+    """Предлагает Mini App или классический урок. False — Mini App выключен."""
+    url = getattr(settings, "webapp_url", "") or get_webapp_url()
+    keyboard = miniapp_lesson_keyboard(url)
+    if keyboard is None:
+        return False
+    await message.answer(MINIAPP_OFFER_TEXT, reply_markup=keyboard)
+    return True
+
+
+@router.message(Command("app"))
+async def cmd_app(message: Message, settings=None) -> None:
+    """Явный вход в Mini App (основной путь — /lesson)."""
+    if not await _answer_miniapp_offer(message, settings):
+        await message.answer(MINIAPP_DISABLED_TEXT, reply_markup=main_menu())
+
 
 def _pick_lesson_type() -> str:
     """Выбирает формат урока так, чтобы подряд не повторялся один и тот же."""
@@ -380,8 +414,18 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
 
 
 @router.message(Command("lesson"))
-async def cmd_lesson(message: Message, repo: Repository, lesson_service: LessonService, quota: QuotaGuard | None = None) -> None:
+async def cmd_lesson(
+    message: Message,
+    repo: Repository,
+    lesson_service: LessonService,
+    quota: QuotaGuard | None = None,
+    settings=None,
+) -> None:
     topic = message.text.removeprefix("/lesson").strip() or None
+    if topic is None:
+        # Без явной темы предлагаем Mini App + классический урок (не ломая /lesson <тема>).
+        if await _answer_miniapp_offer(message, settings):
+            return
     await _start_lesson(message, repo, lesson_service, topic, message.from_user, quota)
 
 

@@ -13,6 +13,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
+from aiohttp import web as aiohttp_web
 
 from core.diagnostic import DiagnosticService
 from core.lesson_notes import LessonNoteService
@@ -43,12 +44,15 @@ from .handlers.premium import router as premium_router
 from .handlers.kaspi import router as kaspi_router
 from .handlers.admin import router as admin_router
 from .lessons import router as lessons_router
+from .keyboards import set_webapp_url
+from .webapp import create_webapp
 
 logger = logging.getLogger(__name__)
 
 COMMANDS = [
     BotCommand(command="start", description="Начать практику"),
     BotCommand(command="lesson", description="Структурированный урок"),
+    BotCommand(command="app", description="📱 Урок в Mini App"),
     BotCommand(command="character", description="🎭 Выбрать персонажа"),
     BotCommand(command="interests", description="🎯 Мои интересы"),
     BotCommand(command="diagnostic", description="🎯 Определить уровень"),
@@ -65,6 +69,38 @@ COMMANDS = [
     BotCommand(command="admin", description="⚙️ Админ"),
     BotCommand(command="help", description="Помощь"),
 ]
+
+
+async def _start_webapp(settings, bot: Bot, deps: dict) -> "aiohttp_web.AppRunner | None":
+    """Поднимает aiohttp-сервер Mini App рядом с поллингом.
+
+    Без WEBAPP_URL ничего не запускаем — обычный запуск бота не меняется.
+    Возвращает runner для cleanup() или None.
+    """
+    if not settings.webapp_url.strip():
+        return None
+    set_webapp_url(settings.webapp_url)
+    app = create_webapp(settings, bot, deps)
+    runner = aiohttp_web.AppRunner(app, access_log=None)
+    try:
+        await runner.setup()
+        site = aiohttp_web.TCPSite(runner, settings.webapp_host, settings.webapp_port)
+        await site.start()
+    except OSError:
+        logger.exception(
+            "Не удалось занять %s:%s для Mini App — бот продолжит без него",
+            settings.webapp_host,
+            settings.webapp_port,
+        )
+        await runner.cleanup()
+        return None
+    logger.info(
+        "Mini App server started: http://%s:%s (public: %s)",
+        settings.webapp_host,
+        settings.webapp_port,
+        settings.webapp_url,
+    )
+    return runner
 
 
 async def main() -> None:
@@ -113,6 +149,8 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
 
+    quota = QuotaGuard(repo, settings.llm_daily_limit)
+
     dp["repo"] = repo
     dp["practice"] = practice
     dp["lesson_service"] = lessons
@@ -124,7 +162,7 @@ async def main() -> None:
     dp["stt"] = stt
     dp["tts"] = tts
     dp["settings"] = settings
-    dp["quota"] = QuotaGuard(repo, settings.llm_daily_limit)
+    dp["quota"] = quota
 
     dp.message.outer_middleware(LLMThrottle())
 
@@ -172,9 +210,25 @@ async def main() -> None:
     scheduler.start()
     logger.info("Scheduler started: reminders every %d hours", 24)
 
+    runner = await _start_webapp(
+        settings,
+        bot,
+        {
+            "repo": repo,
+            "llm": llm,
+            "tts": tts,
+            "quota": quota,
+            "srs": srs_service,
+            "plan_service": plan_service,
+            "note_service": note_service,
+        },
+    )
+
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        if runner is not None:
+            await runner.cleanup()
         scheduler.shutdown(wait=False)
         await repo.close()
         await bot.session.close()

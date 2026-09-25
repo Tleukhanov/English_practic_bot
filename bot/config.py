@@ -54,6 +54,19 @@ class Settings(BaseSettings):
     admin_tg_id: int = 0  # кому отправлять чеки на подтверждение
     kaspi_qr_path: str = ""  # путь/URL картинки со статичным Kaspi QR
 
+    # Telegram Mini App: публичный HTTPS-URL (обязателен для Telegram),
+    # на котором локально поднимается aiohttp-сервер со статикой и API уроков.
+    webapp_url: str = ""
+    webapp_port: int = 8081
+    webapp_host: str = "127.0.0.1"
+    # 1 = не проверять HMAC-подпись initData (только для локальной отладки вне Telegram)
+    webapp_insecure_auth: int = 0
+
+    @property
+    def webapp_enabled(self) -> bool:
+        """Mini App включён, если задан публичный URL."""
+        return bool(self.webapp_url.strip())
+
     @property
     def subscription_plan_list(self) -> list[tuple[int, int]]:
         """Варианты подписки: [(дней, цена в тенге), ...]."""

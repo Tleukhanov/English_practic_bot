@@ -2,13 +2,44 @@
 
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+
+MINI_APP_BUTTON_TEXT = "📱 Урок в Mini App"
+CLASSIC_LESSON_BUTTON_TEXT = "📚 Классический урок"
+
+# Публичный HTTPS-URL Mini App. Задаётся один раз при старте (см. bot/main.py),
+# чтобы кнопка появлялась во всех main_menu() без правок всех вызывающих мест.
+_WEBAPP_URL: str = ""
+
+
+def set_webapp_url(url: str) -> None:
+    """Запоминает URL Mini App (пустая строка — кнопка выключена)."""
+    global _WEBAPP_URL
+    _WEBAPP_URL = (url or "").strip()
+
+
+def get_webapp_url() -> str:
+    """Текущий URL Mini App (пустая строка — выключен)."""
+    return _WEBAPP_URL
+
+
+def miniapp_button(url: str | None = None) -> InlineKeyboardButton | None:
+    """Кнопка открытия Mini App или None, если Mini App выключен."""
+    target = (url if url is not None else _WEBAPP_URL).strip()
+    if not target:
+        return None
+    return InlineKeyboardButton(text=MINI_APP_BUTTON_TEXT, web_app=WebAppInfo(url=target))
 
 
 def _base_menu_rows(due_words: int = 0) -> list[list[InlineKeyboardButton]]:
     review_text = f"📖 Повторить слова ({due_words})" if due_words > 0 else "📖 Повторить слова"
-    return [
+    rows = [
         [InlineKeyboardButton(text="📚 Начать урок", callback_data="lesson_start")],
+    ]
+    miniapp = miniapp_button()
+    if miniapp is not None:
+        rows.append([miniapp])
+    rows += [
         [InlineKeyboardButton(text=review_text, callback_data="review:start")],
         [InlineKeyboardButton(text="🎯 Определить уровень", callback_data="diagnostic_start")],
         [InlineKeyboardButton(text="📊 Статистика", callback_data="stats")],
@@ -27,6 +58,7 @@ def _base_menu_rows(due_words: int = 0) -> list[list[InlineKeyboardButton]]:
         [InlineKeyboardButton(text="🔄 Сброс", callback_data="reset")],
         [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
     ]
+    return rows
 
 
 def main_menu() -> InlineKeyboardMarkup:
@@ -43,6 +75,22 @@ def premium_upsell_keyboard(days: int = 7) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💳 Купить подписку", callback_data=f"premium:buy:{days}")],
+        ]
+    )
+
+
+def miniapp_lesson_keyboard(url: str | None = None) -> InlineKeyboardMarkup | None:
+    """Выбор формата урока: Mini App (web_app) или классический урок в чате.
+
+    None — если Mini App выключен (не задан WEBAPP_URL).
+    """
+    miniapp = miniapp_button(url)
+    if miniapp is None:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [miniapp],
+            [InlineKeyboardButton(text=CLASSIC_LESSON_BUTTON_TEXT, callback_data="lesson_start")],
         ]
     )
 
