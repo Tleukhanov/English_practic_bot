@@ -12,7 +12,7 @@ import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 from bot.config import Settings
-from bot.mini_api import _quiz_results
+from bot.mini_api import _phrase_rating, _quiz_results
 from bot.webapp import (
     compute_hash,
     create_webapp,
@@ -73,6 +73,7 @@ class FakeRepo:
         self.notes = []
         self.srs_words = []
         self.plan = None
+        self.audio_answers = []
 
     async def get_or_create_user(self, tg_id, username=None, first_name=None):
         user = self.users.get(tg_id)
@@ -156,6 +157,17 @@ class FakeRepo:
     async def append_event(self, user_id, event_type, payload=None):
         return None
 
+    async def save_audio_answer(self, session_id, word, audio_file, transcript, rating):
+        self.audio_answers.append(
+            {
+                "session_id": session_id,
+                "word": word,
+                "audio_file": audio_file,
+                "transcript": transcript,
+                "rating": rating,
+            }
+        )
+
 
 class FakeQuota:
     """Контракт повторяет bot.quota.QuotaGuard: check + consume(cost=...)."""
@@ -203,6 +215,16 @@ class FakeTTS:
     async def synthesize(self, text, voice=None):
         self.calls.append((text, voice))
         return b"ID3-fake-mp3"
+
+
+class FakeSTT:
+    def __init__(self, text: str = ""):
+        self.text = text
+        self.calls = 0
+
+    async def transcribe(self, wav_path):
+        self.calls += 1
+        return self.text
 
 
 def fake_deck() -> Deck:
@@ -536,6 +558,81 @@ async def test_deck_finish_survives_broken_finalization():
         await client.close()
 
 
+# ---------- голосовые реплики ----------
+
+
+async def _fake_to_wav(src, dst, sample_rate=16000):
+    """to_wav из providers.audio вместо реального ffmpeg — аудио-байты в тесте фейковые."""
+    return None
+
+
+async def test_voice_answer_returns_transcript_and_rating(monkeypatch):
+    monkeypatch.setattr("providers.audio.to_wav", _fake_to_wav)
+    repo = FakeRepo()
+    deps = make_deps(repo=repo)
+    deps["stt"] = FakeSTT("Coffee is great")
+    client = await make_client(deps)
+    try:
+        await repo.start_mini_lesson(TG_USER_ID, "Coffee", DECK_JSON, "mixed")
+        response = await client.post(
+            "/api/voice/answer",
+            json={
+                "initData": make_init_data(),
+                "audio_base64": base64.b64encode(b"fake-audio-bytes").decode(),
+                "expected_line": "Coffee is great",
+            },
+        )
+        assert response.status == 200
+        payload = await response.json()
+        assert payload["ok"] is True
+        assert payload["transcript"] == "Coffee is great"
+        assert payload["rating"] == 100
+        assert payload["tip"]
+        assert repo.audio_answers and repo.audio_answers[0]["rating"] == 100
+    finally:
+        await client.close()
+
+
+async def test_voice_answer_reports_no_speech(monkeypatch):
+    monkeypatch.setattr("providers.audio.to_wav", _fake_to_wav)
+    repo = FakeRepo()
+    deps = make_deps(repo=repo)
+    deps["stt"] = FakeSTT("  ")
+    client = await make_client(deps)
+    try:
+        await repo.start_mini_lesson(TG_USER_ID, "Coffee", DECK_JSON, "mixed")
+        response = await client.post(
+            "/api/voice/answer",
+            json={"initData": make_init_data(), "audio_base64": base64.b64encode(b"x").decode()},
+        )
+        assert response.status == 400
+        assert (await response.json())["error"] == "no_speech"
+    finally:
+        await client.close()
+
+
+async def test_voice_answer_requires_valid_audio(monkeypatch):
+    monkeypatch.setattr("providers.audio.to_wav", _fake_to_wav)
+    client = await make_client()
+    try:
+        response = await client.post(
+            "/api/voice/answer",
+            json={"initData": make_init_data(), "audio_base64": "not base64!!!"},
+        )
+        assert response.status == 400
+        assert (await response.json())["error"] == "audio_required"
+    finally:
+        await client.close()
+
+
+def test_phrase_rating_meas_similarity():
+    assert _phrase_rating("coffee is great", "Coffee is great") == 100
+    assert _phrase_rating("coffee good", "Coffee is great") == 33
+    assert _phrase_rating("", "Coffee is great") == 0
+    assert _phrase_rating("totally unrelated words here", "Coffee is great") == 0
+    assert _phrase_rating("anything", "") is None
+
+
 async def test_quiz_results_normalizes_front_payload():
     results = _quiz_results(
         {
@@ -575,7 +672,10 @@ async def test_insecure_auth_skips_signature_check():
         await client.close()
 
 
-@pytest.mark.parametrize("path", ["/api/init", "/api/deck/new", "/api/deck/answer", "/api/deck/finish"])
+@pytest.mark.parametrize(
+    "path",
+    ["/api/init", "/api/deck/new", "/api/deck/answer", "/api/deck/finish", "/api/voice/answer"],
+)
 async def test_all_post_endpoints_require_init_data(path):
     client = await make_client()
     try:

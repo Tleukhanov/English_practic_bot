@@ -217,6 +217,7 @@ async def main() -> None:
             "repo": repo,
             "llm": llm,
             "tts": tts,
+            "stt": stt,
             "quota": quota,
             "srs": srs_service,
             "plan_service": plan_service,

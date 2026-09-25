@@ -48,6 +48,7 @@
     dialogueUsedChoices: new Set(),
     dialogueShowAll: false,
     dialogueDone: false,
+    voiceFeedback: {},
     finishRequesting: false,
     finishRequestId: 0,
     finishData: null,
@@ -431,6 +432,7 @@
       state.dialogueUsedChoices = new Set();
       state.dialogueShowAll = false;
       state.dialogueDone = false;
+      state.voiceFeedback = {};
     }
   }
 
@@ -456,6 +458,7 @@
     state.dialogueUsedChoices = new Set();
     state.dialogueShowAll = false;
     state.dialogueDone = false;
+    state.voiceFeedback = {};
     state.finishRequesting = false;
     state.finishRequestId += 1;
     state.finishData = null;
@@ -721,7 +724,27 @@
     }
     const visibleItems = state.dialogueShowAll ? dialogue.lines.map(line => ({ type: 'line', ...line })) : state.dialogueLog;
     const conversation = visibleItems.map(renderBubble).join('');
-    const choices = state.dialogueDone || state.dialogueShowAll ? '' : availableChoices.map(item => `<button class='choice-button' type='button' data-action='dialogue-choice' data-choice-index='${item.index}'>${escapeHtml(item.choice.line)} <span aria-hidden='true'>→</span></button>`).join('');
+    const choices = state.dialogueDone || state.dialogueShowAll ? '' : availableChoices.map(item => {
+      const feedback = state.voiceFeedback[item.index];
+      let feedbackHtml = '';
+      if (feedback) {
+        if (feedback.busy) {
+          feedbackHtml = `<span class='voice-feedback busy'><span class='voice-dot' aria-hidden='true'></span>Слушаем…</span>`;
+        } else if (feedback.error) {
+          feedbackHtml = `<span class='voice-feedback error'>⚠️ ${escapeHtml(feedback.error)}</span>`;
+        } else if (feedback.transcript) {
+          const tone = feedback.rating == null ? '' : feedback.rating >= 70 ? ' good' : feedback.rating >= 40 ? ' mid' : ' weak';
+          const ratingText = feedback.rating == null ? '' : ` · ${feedback.rating}%`;
+          const tipText = feedback.tip ? ` · ${escapeHtml(feedback.tip)}` : '';
+          feedbackHtml = `<span class='voice-feedback${tone}'>🎤 ${escapeHtml(feedback.transcript)}${ratingText}${tipText}</span>`;
+        }
+      }
+      return `<div class='choice-wrap'>
+        <button class='voice-button' type='button' data-action='voice-check' data-choice-index='${item.index}' aria-label='Сказать эту фразу' title='Произнести фразу'>🎤</button>
+        <button class='choice-button' type='button' data-action='dialogue-choice' data-choice-index='${item.index}'>${escapeHtml(item.choice.line)} <span aria-hidden='true'>→</span></button>
+        ${feedbackHtml}
+      </div>`;
+    }).join('');
     const nextButton = state.dialogueDone || state.dialogueShowAll ? `<button class='primary-button dialogue-next' type='button' data-action='dialogue-next'>${state.dialogueDone ? 'К итогам' : 'Далее'} <span aria-hidden='true'>→</span></button>` : '';
     return `<section class='screen dialogue-screen'>
       ${renderLessonTopbar('Живой диалог')}
@@ -1024,6 +1047,67 @@
     return found >= 0 ? found : -1;
   }
 
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = () => reject(new Error('Не удалось прочитать запись'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function checkSpokenPhrase(choiceIndex) {
+    const item = getDialogueChoices().find(candidate => candidate.index === Number(choiceIndex));
+    if (!item) {
+      return;
+    }
+    if (!window.MediaRecorder || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      state.voiceFeedback[item.index] = { error: 'Запись недоступна в этом клиенте' };
+      render();
+      return;
+    }
+    if (state.voiceFeedback[item.index] && state.voiceFeedback[item.index].busy) {
+      return;
+    }
+    state.voiceFeedback[item.index] = { busy: true };
+    render();
+    const chunks = [];
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const stopped = new Promise(resolve => {
+        recorder.ondataavailable = event => { if (event.data && event.data.size) chunks.push(event.data); };
+        recorder.onstop = () => resolve();
+      });
+      recorder.start();
+      await delay(3500);
+      recorder.stop();
+      await stopped;
+      if (!chunks.length) {
+        throw new Error('Запись пустая');
+      }
+      const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+      const audioBase64 = await blobToBase64(blob);
+      const data = await apiPost('/api/voice/answer', {
+        audio_base64: audioBase64,
+        expected_line: item.choice.line
+      });
+      state.voiceFeedback[item.index] = {
+        transcript: asString(data.transcript, ''),
+        rating: numberOrNull(data.rating),
+        tip: asString(data.tip, '')
+      };
+    } catch (error) {
+      state.voiceFeedback[item.index] = { error: error && error.message ? error.message : 'Не удалось записать голос' };
+    } finally {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      render();
+    }
+  }
+
   function chooseDialogue(choiceIndex) {
     const item = getDialogueChoices().find(candidate => candidate.index === Number(choiceIndex));
     if (!item) {
@@ -1293,6 +1377,8 @@
       nextQuizQuestion();
     } else if (action === 'dialogue-choice') {
       chooseDialogue(actionNode.dataset.choiceIndex);
+    } else if (action === 'voice-check') {
+      checkSpokenPhrase(Number(actionNode.dataset.choiceIndex));
     } else if (action === 'dialogue-next') {
       if (state.dialogueDone || state.dialogueShowAll) {
         advanceFromSection();

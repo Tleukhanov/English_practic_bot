@@ -11,8 +11,13 @@ llm, quota, srs, plan_service, tts) передаются словарём ``deps
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
+import os
+import re
+import tempfile
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -45,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 routes = web.RouteTableDef()
 DEFAULT_PRESET = "mixed"
-VOICE_RESERVED_NOTE = "Голосовой ответ приходит отдельным этапом."
+MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
 
 # ---------- утилиты разбора тела ----------
@@ -513,17 +518,131 @@ async def _maybe_generate_plan(request: web.Request, user) -> str:
     return next_topic
 
 
-# ---------- зарезервированный голосовой этап ----------
+# ---------- POST /api/voice/answer ----------
+
+_TIP_EXCELLENT = "Отлично произнесено!"
+_TIP_GOOD = "Хорошо, но можно точнее повторить интонацию и звуки."
+_TIP_WEAK = "Повтори фразу ещё раз — медленнее и ближе к микрофону."
+
+
+def _decode_audio(payload: Mapping[str, Any]) -> bytes | None:
+    """base64 из тела → байты аудио; лимит 8 МБ."""
+    raw = payload.get("audio_base64") or payload.get("audio") or ""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if not data or len(data) > MAX_AUDIO_BYTES:
+        return None
+    return data
+
+
+def _normalize_tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z']+", (text or "").lower())
+
+
+def _phrase_rating(transcript: str, expected: str) -> int | None:
+    """Доля слов фразы, которые юзер произнёс (без LLM и списания квоты)."""
+    if not expected or not expected.strip():
+        return None
+    expected_tokens = _normalize_tokens(expected)
+    spoken_tokens = _normalize_tokens(transcript)
+    if not expected_tokens:
+        return None
+    if not spoken_tokens:
+        return 0
+    spoken_set = set(spoken_tokens)
+    matched = sum(1 for token in expected_tokens if token in spoken_set)
+    return round(100 * matched / len(expected_tokens))
+
+
+def _rating_tip(rating: int | None) -> str:
+    if rating is None:
+        return ""
+    if rating >= 70:
+        return _TIP_EXCELLENT
+    if rating >= 40:
+        return _TIP_GOOD
+    return _TIP_WEAK
 
 
 @routes.post("/voice/answer")
 async def voice_answer(request: web.Request) -> web.Response:
-    """Заглушка голосового этапа (STT + оценка фразы) — следующий шаг MINI_APP.md."""
+    """Голосовая реплика: аудио (base64) → STT → оценка близости к фразе."""
     payload = await read_json(request)
-    _, error = await authenticate(request, payload)
+    tg_user_id, error = await authenticate(request, payload)
     if error is not None:
         return error
-    return error_response("not_implemented", status=501, message=VOICE_RESERVED_NOTE)
+
+    audio = _decode_audio(payload)
+    if audio is None:
+        return error_response("audio_required")
+
+    stt = dependency(request, "stt")
+    if stt is None:
+        return error_response("stt_unavailable", status=503)
+
+    session, error = await _active_session(request, tg_user_id)
+    if error is not None:
+        return error
+
+    fd, raw_path = tempfile.mkstemp(suffix=".webm")
+    os.close(fd)
+    wav_path = raw_path + ".wav"
+    try:
+        with open(raw_path, "wb") as f:
+            f.write(audio)
+        from providers.audio import to_wav
+
+        await to_wav(raw_path, wav_path)
+        transcript = (await stt.transcribe(wav_path)).strip()
+    except Exception:
+        logger.exception("Ошибка STT голосовой реплики: user=%s", tg_user_id)
+        return error_response("stt_failed", status=502)
+    finally:
+        for path in (raw_path, wav_path):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                logger.warning("Не удалось удалить временное аудио: %s", path)
+
+    if not transcript:
+        return error_response("no_speech")
+
+    expected = _text_or_none(payload, "expected_line", "phrase")
+    rating = _phrase_rating(transcript, expected or "")
+    tip = _rating_tip(rating)
+
+    repo = dependency(request, "repo")
+    if repo is not None:
+        try:
+            await repo.save_audio_answer(
+                session.id,
+                word=(_text_or_none(payload, "word") or expected or transcript)[:120],
+                audio_file="",  # аудио не персистим в MVP — храним расшифровку и оценку
+                transcript=transcript[:500],
+                rating=rating,
+            )
+            await track_event(
+                repo,
+                getattr(session, "user_id", tg_user_id),
+                "miniapp_voice_answer",
+                {"rating": rating, "matched": expected or ""},
+            )
+        except Exception:
+            logger.exception("Не удалось сохранить голосовую реплику: session=%s", session.id)
+
+    return ok_response(
+        {
+            "transcript": transcript,
+            "rating": rating,
+            "tip": tip,
+            "expected_line": expected or "",
+        }
+    )
 
 
 # ---------- сборка под-приложения ----------
