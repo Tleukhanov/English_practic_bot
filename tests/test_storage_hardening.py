@@ -7,6 +7,8 @@ is_correct, gap-семантика streak и колонки схемы на св
 
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -150,3 +152,20 @@ async def test_add_srs_word_ignored_duplicate_returns_none(repo):
         SRSWord(user_id=user.id, word="hello", translation="привет")
     )
     assert duplicate is None
+
+
+async def test_concurrent_append_diagnostic_answers_lose_nothing(repo):
+    """Параллельные append_diagnostic_answer не теряют ответы (атомарный UPDATE)."""
+    user = await repo.get_or_create_user(90013)
+    session = await repo.start_diagnostic(user.id, "[]")
+    await asyncio.gather(
+        *[repo.append_diagnostic_answer(session.id, f"answer-{i}") for i in range(40)]
+    )
+    cursor = await repo._conn.execute(
+        "SELECT answers_json FROM diagnostic_sessions WHERE id = ?", (session.id,)
+    )
+    row = await cursor.fetchone()
+    answers = json.loads(row["answers_json"])
+    assert len(answers) == 40
+    assert len(set(answers)) == 40
+    assert all(a.startswith("answer-") for a in answers)

@@ -1,9 +1,14 @@
 """Тесты ядра диагностики уровня (Фаза 3): парсеры, эвристика, сервис на мок-LLM."""
 
+from types import SimpleNamespace
+
 import pytest
 
+from bot.diagnostic import _assess_and_finish
+from bot.quota import QuotaExceeded
 from core.diagnostic import (
     CEFR_LEVELS,
+    DiagnosticAssessment,
     DiagnosticParseError,
     DiagnosticService,
     DiagnosticTask,
@@ -150,3 +155,57 @@ async def test_diagnostic_service_assess():
 
 def test_cefr_levels_order():
     assert CEFR_LEVELS == ["A1", "A2", "B1", "B2", "C1"]
+
+
+async def test_assess_consume_race_keeps_llm_assessment():
+    class FakeDiagRepo:
+        def __init__(self):
+            self.level = None
+            self.finished = 0
+
+        async def set_level(self, user_id, level):
+            self.level = level
+
+        async def finish_diagnostic(self, session_id):
+            self.finished += 1
+
+    class FakeDiagService:
+        def __init__(self, assessment):
+            self._assessment = assessment
+            self.calls = 0
+
+        async def assess(self, questions, answers):
+            self.calls += 1
+            return self._assessment
+
+    class RacingQuota:
+        async def check(self, user_id):
+            pass
+
+        async def consume(self, user_id):
+            raise QuotaExceeded("гонка квоты")
+
+    class Target:
+        def __init__(self):
+            self.sent = []
+
+        async def answer(self, text, reply_markup=None):
+            self.sent.append(text)
+
+    assessment = DiagnosticAssessment(level="B1", confidence=0.7, explanation_ru="ок")
+    repo = FakeDiagRepo()
+    service = FakeDiagService(assessment)
+    session = SimpleNamespace(
+        id=5,
+        user_id=7,
+        questions_json=diagnostic_tasks_to_json([DiagnosticTask(text="Hi there", level_hint="A1")]),
+        answers_json='["hello"]',
+    )
+    target = Target()
+
+    await _assess_and_finish(target, repo, service, session, quota=RacingQuota())
+
+    assert service.calls == 1
+    assert repo.level == "B1"  # LLM-оценка сохранена, а не эвристика (та дала бы A1)
+    assert repo.finished == 1
+    assert target.sent and "B1" in target.sent[0]

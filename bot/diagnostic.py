@@ -68,12 +68,18 @@ async def _assess_and_finish(
     try:
         assessment = await diagnostic_service.assess(questions, answers)
         estimated = False
-        if quota is not None:
-            await quota.consume(session.user_id)
     except Exception as exc:
         logger.exception("Ошибка оценки уровня: %s", exc)
         assessment = DiagnosticAssessment(level=estimate_level_heuristic(answers))
         estimated = True
+    if quota is not None and not estimated:
+        try:
+            await quota.consume(session.user_id)
+        except QuotaExceeded:
+            logger.warning(
+                "Гонка квоты при списании диагностики: user=%s — оценка сохранена, списание пропущено",
+                session.user_id,
+            )
     await repo.set_level(session.user_id, assessment.level)
     await repo.finish_diagnostic(session.id)
     await target.answer(format_level_result(assessment, estimated=estimated), reply_markup=main_menu())
@@ -167,7 +173,13 @@ async def _start_diagnostic(target, repo: Repository, diagnostic_service: Diagno
         await status.edit_text("🤔 Не удалось составить задания. Попробуй ещё раз.")
         return
     if quota is not None:
-        await quota.consume(user.id)
+        try:
+            await quota.consume(user.id)
+        except QuotaExceeded:
+            logger.warning(
+                "Гонка квоты при списании диагностики: user=%s — диагностика начата, списание пропущено",
+                user.id,
+            )
 
     session = await repo.start_diagnostic(user.id, diagnostic_tasks_to_json(tasks))
     await status.edit_text(

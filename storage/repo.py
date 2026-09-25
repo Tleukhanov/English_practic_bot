@@ -83,6 +83,17 @@ class LessonNote:
 
 
 @dataclass
+class LessonPlanRow:
+    """«План уроков» пользователя на N дней: JSON-план и опора на число пройденных уроков."""
+
+    user_id: int
+    plan_json: str
+    horizon: int = 12
+    based_on_lessons: int = 0
+    generated_at: str = ""
+
+
+@dataclass
 class TopicProposal:
     """Предложение темы для урока (Фаза 2). Временная запись до выбора пользователя."""
 
@@ -351,6 +362,24 @@ class Repository(ABC):
     @abstractmethod
     async def cancel_order(self, order_id: int) -> None: ...
 
+    @abstractmethod
+    async def replace_pending_order(
+        self,
+        user_id: int,
+        plan_days: int,
+        amount: int,
+        discount_pct: int,
+        coupon_id: int,
+        order_code: str,
+    ) -> KaspiOrder:
+        """Отменяет все старые pending и создаёт новый заказ в одной транзакции."""
+        ...
+
+    @abstractmethod
+    async def is_order_code_taken(self, order_code: str) -> bool:
+        """Занят ли код среди не-отменённых заказов."""
+        ...
+
     # ---------- аналитика (события) ----------
 
     @abstractmethod
@@ -432,6 +461,15 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_lesson_notes(self, user_id: int, limit: int = 10) -> list[LessonNote]: ...
+
+    @abstractmethod
+    async def get_lesson_plan(self, user_id: int) -> LessonPlanRow | None: ...
+
+    @abstractmethod
+    async def save_lesson_plan(self, plan: LessonPlanRow) -> None: ...
+
+    @abstractmethod
+    async def count_finished_lessons(self, user_id: int) -> int: ...
 
     @abstractmethod
     async def get_all_users(self) -> list[UserRow]: ...

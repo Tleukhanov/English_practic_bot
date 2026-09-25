@@ -134,9 +134,18 @@ async def cb_wheel_spin(callback: CallbackQuery, repo: Repository) -> None:
         await callback.answer()
     except Exception as exc:
         logger.exception("Ошибка колеса удачи: user=%s exc=%s", user.id, exc)
-        text = "⚠️ Что-то пошло не так. Попробуй ещё раз."
-        if status is not None:
-            await status.edit_text(text)
+        try:
+            available = await service.is_spin_available(user.id)
+        except Exception:
+            available = False
+        if available:
+            text = "⚠️ Не удалось выдать приз — крутка не списана. Попробуй ещё раз! 🎡"
+            reply_markup = spin_keyboard()
         else:
-            await callback.message.edit_text(text)
+            text = "⚠️ Что-то пошло не так, но крутка уже учтена. Если приз не появился — напиши нам. 🎡"
+            reply_markup = None
+        if status is not None:
+            await status.edit_text(text, reply_markup=reply_markup)
+        else:
+            await callback.message.edit_text(text, reply_markup=reply_markup)
         await callback.answer()

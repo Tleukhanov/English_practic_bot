@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     tts_provider: str = "edge-tts"
     tts_voice: str = "en-US-JennyNeural"
+    tts_api_key: str = ""
 
     database_path: str = "data/english_bot.db"
 

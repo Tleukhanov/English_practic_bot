@@ -43,9 +43,9 @@ def create_tts(settings: Settings) -> TTSProvider:
     if provider == "edge-tts":
         return EdgeTTSProvider(voice=settings.tts_voice)
     if provider == "openai":
-        if not settings.llm_api_key:
-            raise ValueError("TTS_PROVIDER=openai, но LLM_API_KEY не задан в .env")
+        if not settings.tts_api_key:
+            raise ValueError("TTS_PROVIDER=openai, но TTS_API_KEY не задан в .env")
         from .tts_openai import OpenAITTSProvider
 
-        return OpenAITTSProvider(api_key=settings.llm_api_key)
+        return OpenAITTSProvider(api_key=settings.tts_api_key)
     raise ValueError(f"Неизвестный TTS_PROVIDER={provider!r}. Доступные: edge-tts, openai")

@@ -39,6 +39,43 @@ class FakeRng:
         return self._choice.pop(0) if self._choice else seq[0]
 
 
+class FailingCouponRepo:
+    """Прокси над репозиторием: create_coupon падает (имитация сбоя выдачи купона)."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def create_coupon(self, user_id, discount_pct, expires_at):
+        raise RuntimeError("storage недоступен при выдаче купона")
+
+
+class RacedRepo:
+    """Имитация гонки: «конкурент» успевает применить приз и записать крутку раньше нас.
+
+    Наша попытка save_spin вернёт False (ON CONFLICT DO NOTHING), и сервис
+    обязан откатить уже применённый приз.
+    """
+
+    def __init__(self, inner, competitor_actions: int = 0):
+        self._inner = inner
+        self._competitor_actions = competitor_actions
+        self._raced = False
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def save_spin(self, user_id, date):
+        if not self._raced:
+            self._raced = True
+            if self._competitor_actions:
+                await self._inner.add_extra_actions(user_id, self._competitor_actions)
+            await self._inner.save_spin(user_id, date)
+        return await self._inner.save_spin(user_id, date)
+
+
 @pytest.fixture
 async def repo(tmp_path):
     db = SQLiteRepository(str(tmp_path / "wheel.db"))
@@ -138,3 +175,85 @@ async def test_import_handlers_smoke():
     import bot.handlers.wheel as wheel_handlers
 
     assert wheel_handlers.router is not None
+
+
+async def test_coupon_error_does_not_spend_spin(repo):
+    """Сбой выдачи купона: крутка НЕ записана и приз НЕ оставлен."""
+    user = await repo.get_or_create_user(110)
+    svc = WheelService(FailingCouponRepo(repo), rng=FakeRng(random_values=[0.0]))
+
+    with pytest.raises(RuntimeError):
+        await svc.spin(user.id)
+
+    assert await repo.get_last_spin_date(user.id) is None
+    assert await repo.get_active_coupon(user.id) is None
+    assert await repo.get_dry_streak(user.id) == 0
+    assert await svc.is_spin_available(user.id)
+
+
+async def test_spin_success_writes_prize_and_single_spin(repo):
+    """Успех: приз записан, факт крутки — ровно одна запись."""
+    user = await repo.get_or_create_user(111)
+    svc = WheelService(repo, rng=FakeRng(random_values=[0.6]))
+
+    prize = await svc.spin(user.id)
+
+    assert prize.kind == ACTIONS_15
+    assert await repo.get_extra_actions(user.id) == 15
+    cursor = await repo._conn.execute(
+        "SELECT COUNT(*) AS n FROM wheel_spins WHERE user_id = ?", (user.id,)
+    )
+    row = await cursor.fetchone()
+    assert row["n"] == 1
+
+    with pytest.raises(WheelCooldown):
+        await svc.spin(user.id)
+    assert await repo.get_extra_actions(user.id) == 15
+
+
+async def test_concurrent_double_spin_gives_single_prize(repo):
+    """Конкурентный двойной спин: приз применяется ровно один раз."""
+    user = await repo.get_or_create_user(112)
+    raced = RacedRepo(repo, competitor_actions=15)
+    svc = WheelService(raced, rng=FakeRng(random_values=[0.6]))
+
+    with pytest.raises(WheelCooldown):
+        await svc.spin(user.id)
+
+    assert await repo.get_extra_actions(user.id) == 15
+    cursor = await repo._conn.execute(
+        "SELECT COUNT(*) AS n FROM wheel_spins WHERE user_id = ?", (user.id,)
+    )
+    row = await cursor.fetchone()
+    assert row["n"] == 1
+    assert not await svc.is_spin_available(user.id)
+
+
+async def test_concurrent_race_rolls_back_coupon(repo):
+    """Проигранная гонка откатывает только что созданный купон."""
+    user = await repo.get_or_create_user(113)
+    raced = RacedRepo(repo)
+    svc = WheelService(raced, rng=FakeRng(random_values=[0.0]))
+
+    with pytest.raises(WheelCooldown):
+        await svc.spin(user.id)
+
+    assert await repo.get_active_coupon(user.id) is None
+    assert await repo.get_last_spin_date(user.id) == WheelService.today()
+
+
+async def test_concurrent_race_rolls_back_subscription(repo):
+    """Проигранная гонка удаляет грант подписки проигравшего спина."""
+    user = await repo.get_or_create_user(114)
+    raced = RacedRepo(repo)
+    svc = WheelService(raced, rng=FakeRng(random_values=[0.92]))
+
+    with pytest.raises(WheelCooldown):
+        await svc.spin(user.id)
+
+    assert await repo.get_subscription(user.id) is None
+    cursor = await repo._conn.execute(
+        "SELECT COUNT(*) AS n FROM subscriptions WHERE user_id = ?", (user.id,)
+    )
+    row = await cursor.fetchone()
+    assert row["n"] == 0

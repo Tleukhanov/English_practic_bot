@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import string
+import uuid
 
 from aiogram import F, Router
 from aiogram.types import (
@@ -30,8 +32,53 @@ logger = logging.getLogger(__name__)
 FALLBACK_DEVELOPER = "@Napaleonwww"
 
 
+ORDER_CODE_ALPHABET = string.ascii_uppercase + string.digits
+ORDER_CODE_LENGTH = 8
+
+_order_locks: dict[int, asyncio.Lock] = {}
+
+
+def _order_lock() -> asyncio.Lock:
+    """Per-event-loop lock: экземпляры Lock привязаны к текущему loop (pytest меняет loop на тест)."""
+    loop_id = id(asyncio.get_running_loop())
+    lock = _order_locks.get(loop_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _order_locks[loop_id] = lock
+    return lock
+
+
 def _make_order_code() -> str:
-    return "BOT-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    return "BOT-" + "".join(random.choices(ORDER_CODE_ALPHABET, k=ORDER_CODE_LENGTH))
+
+
+async def _make_unique_order_code(repo: Repository) -> str:
+    """Уникальный среди не-отменённых заказов код комментария (с ретраем)."""
+    for _ in range(32):
+        code = _make_order_code()
+        if not await repo.is_order_code_taken(code):
+            return code
+    return "BOT-" + uuid.uuid4().hex[:ORDER_CODE_LENGTH].upper()
+
+
+async def ensure_pending_order(repo: Repository, user_id: int, days: int, price: int) -> KaspiOrder:
+    """Возвращает единственный живой pending-заказ на тариф days.
+
+    Старые pending отменяются в той же транзакции, что и создание нового.
+    Купон здесь НЕ сжигается — он сгорает только при подтверждении в _grant_order.
+    """
+    async with _order_lock():
+        pending = await repo.get_pending_order(user_id)
+        if pending is not None and pending.plan_days == days:
+            return pending
+        coupon = await repo.get_active_coupon(user_id)
+        discount = coupon.discount_pct if coupon is not None else 0
+        coupon_id = coupon.id if coupon is not None else 0
+        final = price - price * discount // 100
+        order_code = await _make_unique_order_code(repo)
+        return await repo.replace_pending_order(
+            user_id, days, final, discount, coupon_id, order_code
+        )
 
 
 def _confirm_keyboard(order_id: int, photo_file_id: str) -> InlineKeyboardMarkup:
@@ -83,31 +130,14 @@ async def cb_kaspi_pay(callback: CallbackQuery, repo: Repository, settings: Sett
         first_name=callback.from_user.first_name,
     )
 
-    purchase = await repo.get_pending_order(user.id)
-    if purchase is None:
-        coupon = await repo.get_active_coupon(user.id)
-        discount = coupon.discount_pct if coupon and not coupon.is_expired else 0
-        coupon_id = coupon.id if coupon else 0
-        price = plan[1]
-        final = price - price * discount // 100
-        purchase = await repo.create_order(
-            user.id, days, final, discount, coupon_id, order_code=_make_order_code()
+    try:
+        purchase = await ensure_pending_order(repo, user.id, days, plan[1])
+    except Exception:
+        logger.exception("Kaspi-ошибка при создании заказа: user=%s days=%s", user.id, days)
+        await callback.message.answer(
+            "❌ Не удалось создать заказ. Попробуй ещё раз или напиши: " + FALLBACK_DEVELOPER
         )
-        if coupon_id > 0:
-            await repo.mark_coupon_used(coupon_id, user.id)
-    elif purchase.plan_days != days:
-        await repo.cancel_order(purchase.id)
-        coupon = await repo.get_active_coupon(user.id)
-        discount = coupon.discount_pct if coupon and not coupon.is_expired else 0
-        coupon_id = coupon.id if coupon else 0
-        price = plan[1]
-        final = price - price * discount // 100
-        purchase = await repo.create_order(
-            user.id, days, final, discount, coupon_id, order_code=_make_order_code()
-        )
-        if coupon_id > 0:
-            await repo.mark_coupon_used(coupon_id, user.id)
-        logger.info("Kaspi-заказ заменён: user=%s new_days=%s", user.id, days)
+        return
 
     await track_event(repo, user.id, "kaspi_order_created", {"days": purchase.plan_days, "amount": purchase.amount})
 
@@ -160,8 +190,8 @@ async def cb_kaspi_cancel(callback: CallbackQuery, repo: Repository) -> None:
         return
     await repo.cancel_order(purchase.id)
     await callback.message.edit_text(
-        "❌ Заказ отменён. Если использовалась скидка — она уже применена к этому заказу и "
-        "потеряна. Если передумаешь — загляни в /premium 😉"
+        "❌ Заказ отменён. Скидка-купон при этом не тратится — он сгорит только при "
+        "подтверждённой оплате. Если передумаешь — загляни в /premium 😉"
     )
     logger.info("Kaspi-заказ отменён: user=%s order=%s", user.id, purchase.id)
 

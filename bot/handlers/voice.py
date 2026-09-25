@@ -12,6 +12,7 @@ import tempfile
 import uuid
 
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, Message
 
 from bot.config import Settings
@@ -101,8 +102,14 @@ async def on_voice(
     diagnostic_service: DiagnosticService,
     profile_service: ProfileService,
     settings: Settings,
+    state: FSMContext,
     quota: QuotaGuard | None = None,
 ) -> None:
+    current_state = await state.get_state()
+    if current_state and "ReviewState" in current_state:
+        await message.answer("📖 Сейчас идёт повторение слов — ответь текстом, пожалуйста.")
+        return
+
     voice = message.voice
     if voice.duration and voice.duration > settings.max_voice_duration_sec:
         await message.answer(

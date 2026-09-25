@@ -6,16 +6,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
+import time
 from datetime import datetime, timezone
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramRetryAfter
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from core.retention import RetentionService
 from storage.repo import Repository
+
+SEND_PAUSE_SECONDS = 0.05
+WHEEL_REMINDER_INTERVAL_SECONDS = 24 * 60 * 60
+_FLOOD_SLEEP_CAP_SECONDS = 10
 
 
 class ReminderDedupe:
@@ -36,6 +43,22 @@ class ReminderDedupe:
         if self._reminded.get(user_id) == expires_at:
             return False
         self._reminded[user_id] = expires_at
+        return True
+
+
+class ReminderThrottle:
+    """Позволяет слать напоминание юзеру не чаще раза в заданный интервал."""
+
+    def __init__(self, min_interval_seconds: float) -> None:
+        self._min_interval = min_interval_seconds
+        self._last_sent: dict[int, float] = {}
+
+    def should_send(self, user_id: int) -> bool:
+        now = time.monotonic()
+        last = self._last_sent.get(user_id)
+        if last is not None and now - last < self._min_interval:
+            return False
+        self._last_sent[user_id] = now
         return True
 
 logger = logging.getLogger(__name__)
@@ -66,8 +89,16 @@ def _build_reminder_message(name: str, info) -> str | None:
     )
 
 
+_practice_reminder_dedupe = ReminderDedupe()
+_PRACTICE_DEDUPE_KEY = "daily-practice"
+
+
 async def check_and_send_reminders(bot: Bot, repo: Repository) -> None:
-    """Проверяет всех пользователей и отправляет напоминания."""
+    """Проверяет всех пользователей и отправляет напоминания.
+
+    Не чаще раза в сутки на пользователя (ReminderDedupe), пауза между
+    отправками, ошибка одного пользователя не прерывает остаток батча.
+    """
     users = await repo.get_all_users()
     retention_service = RetentionService(repo)
 
@@ -78,32 +109,62 @@ async def check_and_send_reminders(bot: Bot, repo: Repository) -> None:
             name = html.escape(user.first_name or "друг")
             message = _build_reminder_message(name, info)
 
-            if message:
-                await bot.send_message(user.tg_id, message)
-                sent += 1
-                logger.info("Reminder sent to user %s", user.tg_id)
+            if not message:
+                continue
+            if not _practice_reminder_dedupe.should_send(user.id, _PRACTICE_DEDUPE_KEY):
+                continue
+
+            await bot.send_message(user.tg_id, message)
+            sent += 1
+            logger.info("Reminder sent to user %s", user.tg_id)
+        except TelegramRetryAfter as e:
+            logger.warning("Flood-wait (%ss) for user %s", e.retry_after, user.tg_id)
+            await asyncio.sleep(min(e.retry_after, _FLOOD_SLEEP_CAP_SECONDS))
         except Exception:
             logger.warning("Failed to send reminder to user %s", user.tg_id, exc_info=True)
+            await asyncio.sleep(SEND_PAUSE_SECONDS)
+        else:
+            await asyncio.sleep(SEND_PAUSE_SECONDS)
 
     logger.info("Reminders sent: %d / %d users", sent, len(users))
 
 
+_wheel_reminder_throttle = ReminderThrottle(WHEEL_REMINDER_INTERVAL_SECONDS)
+_WHEEL_TEXT = "🎡 У тебя сегодня неиспользованная крутка удачи! Загляни: /wheel"
+
+
 async def reminder_wheel_misses(bot: Bot, repo: Repository) -> None:
-    """Напоминает пользователям о неиспользованной крутке Колеса удачи."""
+    """Напоминает о неиспользованной крутке.
+
+    Только пользователям с хотя бы одной круткой или подпиской и не чаще
+    раза в сутки. Пауза между отправками, ошибка одного не ломает батч.
+    """
     users = await repo.get_all_users()
     today = datetime.now(timezone.utc).date().isoformat()
     sent = 0
     for user in users:
         try:
             last_spin = await repo.get_last_spin_date(user.id)
+            sub = await repo.get_subscription(user.id)
+
+            if last_spin is None and sub is None:
+                continue
             if last_spin == today:
                 continue
-            text = "🎡 У тебя сегодня неиспользованная крутка удачи! Загляни: /wheel"
-            await bot.send_message(user.tg_id, text)
+            if not _wheel_reminder_throttle.should_send(user.id):
+                continue
+
+            await bot.send_message(user.tg_id, _WHEEL_TEXT)
             sent += 1
             logger.info("Wheel reminder sent to user %s", user.tg_id)
+        except TelegramRetryAfter as e:
+            logger.warning("Flood-wait (%ss) for user %s", e.retry_after, user.tg_id)
+            await asyncio.sleep(min(e.retry_after, _FLOOD_SLEEP_CAP_SECONDS))
         except Exception:
             logger.warning("Failed to send wheel reminder to user %s", user.tg_id, exc_info=True)
+            await asyncio.sleep(SEND_PAUSE_SECONDS)
+        else:
+            await asyncio.sleep(SEND_PAUSE_SECONDS)
     logger.info("Wheel reminders sent: %d / %d users", sent, len(users))
 
 
@@ -142,8 +203,14 @@ async def subscription_expiry_reminders(bot: Bot, repo: Repository) -> None:
             await bot.send_message(user.tg_id, text)
             sent += 1
             logger.info("Expiry reminder sent to user %s", user.tg_id)
+        except TelegramRetryAfter as e:
+            logger.warning("Flood-wait (%ss) for user %s", e.retry_after, user.tg_id)
+            await asyncio.sleep(min(e.retry_after, _FLOOD_SLEEP_CAP_SECONDS))
         except Exception:
             logger.warning("Failed to send expiry reminder to user %s", user.tg_id, exc_info=True)
+            await asyncio.sleep(SEND_PAUSE_SECONDS)
+        else:
+            await asyncio.sleep(SEND_PAUSE_SECONDS)
     logger.info("Expiry reminders sent: %d / %d users", sent, len(users))
 
 

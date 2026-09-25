@@ -5,13 +5,16 @@
 
 from __future__ import annotations
 
+import logging
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 if TYPE_CHECKING:
     from storage.repo import Repository
+
+logger = logging.getLogger(__name__)
 
 # --- идентификаторы секторов -------------------------------------------------
 
@@ -77,6 +80,11 @@ class WheelCooldown(Exception):
     """Крутка сегодня уже потрачена."""
 
 
+async def _revert_nothing() -> None:
+    """Пустой откат: такие призы ничего в БД не создают."""
+    return None
+
+
 class WheelService:
     """Сервис колеса удачи.
 
@@ -99,29 +107,41 @@ class WheelService:
         return last != self.today()
 
     async def spin(self, user_id: int) -> WheelPrize:
-        """Крутка на сегодня. Приз применяется, крутка всегда списывается.
+        """Крутка на сегодня.
 
-        Спин атомарен: сначала фиксируем крутку в БД (INSERT ... ON CONFLICT
-        DO NOTHING). Если сегодня уже было записано — крутка уже была, и мы
-        НЕ применяем приз повторно (бросаем WheelCooldown). Это защищает от
-        двойных бонусов при двух одновременных нажатиях.
+        Порядок: приз применяется ПЕРВЫМ, факт крутки фиксируется ПОСЛЕ.
+        Фиксация использует INSERT ... ON CONFLICT DO NOTHING: если к этому
+        моменту крутку уже записал конкурентный запрос (rowcount == 0) или
+        фиксация упала — уже применённый приз откатывается, сухая серия не
+        меняется, а крутка не потеряна (можно повторить).
         """
         if not await self.is_spin_available(user_id):
             raise WheelCooldown("Крутка доступна раз в сутки: сегодня уже крутил")
 
-        inserted = await self._repo.save_spin(user_id, self.today())
+        dry_streak = await self._repo.get_dry_streak(user_id)
+        kind = await self._pick_kind(user_id, dry_streak)
+        prize, revert = await self._apply_prize(user_id, kind)
+
+        try:
+            inserted = await self._repo.save_spin(user_id, self.today())
+        except BaseException:
+            await self._revert_best_effort(revert)
+            raise
         if not inserted:
-            # Кто-то уже успел записать крутку — сегодняшняя уже потрачена.
+            # Конкурент уже успел записать крутку — сегодняшняя не наша.
+            await self._revert_best_effort(revert)
             raise WheelCooldown("Крутка доступна раз в сутки: сегодня уже крутил")
 
-        kind = await self._pick_kind(user_id)
-        return await self._apply_prize(user_id, kind)
+        # Крутка наша — по факту успеха фиксируем сухую серию.
+        if kind in BIG_PRIZES:
+            await self._repo.set_dry_streak(user_id, 0)
+        else:
+            await self._repo.set_dry_streak(user_id, dry_streak + 1)
+        return prize
 
-    async def _pick_kind(self, user_id: int) -> str:
+    async def _pick_kind(self, user_id: int, dry_streak: int) -> str:
         sub = await self._repo.get_subscription(user_id)
         is_subscriber = sub is not None and sub.is_active
-
-        dry_streak = await self._repo.get_dry_streak(user_id)
 
         if dry_streak >= PITY_THRESHOLD:
             kind = self._rng.choice(BIG_PRIZE_KINDS)
@@ -129,13 +149,7 @@ class WheelService:
             kind = self._pick_weighted()
 
         # подписчикам скидки не выпадают: вместо них бонус LLM-действий
-        kind = self._translate_for_subscriber(kind, is_subscriber)
-
-        if kind in BIG_PRIZES:
-            await self._repo.set_dry_streak(user_id, 0)
-        else:
-            await self._repo.set_dry_streak(user_id, dry_streak + 1)
-        return kind
+        return self._translate_for_subscriber(kind, is_subscriber)
 
     def _pick_weighted(self) -> str:
         total = sum(weight for _, weight in WHEEL_SECTORS)
@@ -157,42 +171,75 @@ class WheelService:
             return ACTIONS_50
         return kind
 
-    async def _apply_prize(self, user_id: int, kind: str) -> WheelPrize:
+    async def _apply_prize(
+        self, user_id: int, kind: str
+    ) -> tuple[WheelPrize, Callable[[], Awaitable[None]]]:
+        """Применяет приз и возвращает колбэк его отката на случай проигранной гонки."""
         if kind in (DISCOUNT_10, DISCOUNT_20, DISCOUNT_30):
             pct = self._discount_pct(kind)
             expires = (datetime.now(timezone.utc) + timedelta(hours=COUPON_TTL_HOURS)).isoformat()
-            await self._repo.create_coupon(user_id, pct, expires)
-            return WheelPrize(
-                kind=kind,
-                title=SECTOR_TITLES[kind],
-                description=SECTOR_DESCRIPTIONS[kind],
-                discount_pct=pct,
-                coupon_expires_at=expires,
+            coupon = await self._repo.create_coupon(user_id, pct, expires)
+            return (
+                WheelPrize(
+                    kind=kind,
+                    title=SECTOR_TITLES[kind],
+                    description=SECTOR_DESCRIPTIONS[kind],
+                    discount_pct=pct,
+                    coupon_expires_at=expires,
+                ),
+                lambda: self._repo.mark_coupon_used(coupon.id, user_id),
             )
 
         if kind in (ACTIONS_15, ACTIONS_50):
             amount = 50 if kind == ACTIONS_50 else 15
             await self._repo.add_extra_actions(user_id, amount)
-            return WheelPrize(
-                kind=kind,
-                title=SECTOR_TITLES[kind],
-                description=SECTOR_DESCRIPTIONS[kind],
-                extra_actions=amount,
+            return (
+                WheelPrize(
+                    kind=kind,
+                    title=SECTOR_TITLES[kind],
+                    description=SECTOR_DESCRIPTIONS[kind],
+                    extra_actions=amount,
+                ),
+                lambda: self._repo.decrement_extra_actions(user_id, amount),
             )
 
         if kind == JACKPOT:
-            await self._repo.grant_subscription(user_id, 1)
-            return WheelPrize(
+            sub = await self._repo.grant_subscription(user_id, 1)
+            return (
+                WheelPrize(
+                    kind=kind,
+                    title=SECTOR_TITLES[kind],
+                    description=SECTOR_DESCRIPTIONS[kind],
+                ),
+                lambda: self._revoke_subscription(sub.id, user_id),
+            )
+
+        return (
+            WheelPrize(
                 kind=kind,
                 title=SECTOR_TITLES[kind],
                 description=SECTOR_DESCRIPTIONS[kind],
-            )
-
-        return WheelPrize(
-            kind=kind,
-            title=SECTOR_TITLES[kind],
-            description=SECTOR_DESCRIPTIONS[kind],
+            ),
+            _revert_nothing,
         )
+
+    async def _revoke_subscription(self, subscription_id: int, user_id: int) -> None:
+        """Удаляет грант, созданный этой круткой (в Repository нет метода отмены)."""
+        conn = getattr(self._repo, "_conn", None)
+        if conn is None:
+            return
+        await conn.execute(
+            "DELETE FROM subscriptions WHERE id = ? AND user_id = ?",
+            (subscription_id, user_id),
+        )
+        await conn.commit()
+
+    async def _revert_best_effort(self, revert) -> None:
+        """Откат приза лучшим образом: ошибка отката не должна маскировать основную."""
+        try:
+            await revert()
+        except Exception:
+            logger.exception("Не удалось откатить приз колеса")
 
     @staticmethod
     def _discount_pct(kind: str) -> int:

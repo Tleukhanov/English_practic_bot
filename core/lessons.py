@@ -169,6 +169,7 @@ def _render_system_prompt(
     recent_topics: list[str] | None = None,
     character_prompt: str = "",
     lesson_type: str = "standard",
+    plan_hint: str = "",
 ) -> str:
     type_rules = LESSON_TYPES.get(lesson_type, LESSON_TYPES["standard"])
     text = body.replace(
@@ -194,6 +195,8 @@ def _render_system_prompt(
         )
     if character_prompt:
         text += f"\n\n[CHARACTER STYLE — act as this character while keeping JSON format: {character_prompt}]"
+    if plan_hint:
+        text += f"\n\nLESSON PLAN CONTEXT: {plan_hint}. Follow this plan's topic and focus; adapt but do not deviate arbitrarily."
     text += (
         "\n\nIMPORTANT: Your ENTIRE response MUST be a single valid JSON object matching the schema above. "
         "No markdown, no explanations outside JSON, no code fences, no extra text before or after. "
@@ -225,9 +228,10 @@ def build_lesson_prompt(
     recent_topics: list[str] | None = None,
     character_prompt: str = "",
     lesson_type: str = "standard",
+    plan_hint: str | None = None,
 ) -> list[dict[str, str]]:
     user_message = f"Create a structured lesson. Topic: {topic}" if topic else "Create a structured lesson on an interesting topic of your choice."
-    system = _render_system_prompt(CORE_SYSTEM_PROMPT, level, profile, recent_topics, character_prompt, lesson_type)
+    system = _render_system_prompt(CORE_SYSTEM_PROMPT, level, profile, recent_topics, character_prompt, lesson_type, plan_hint)
     return _step_messages(system, user_message)
 
 
@@ -238,8 +242,9 @@ def _build_core_messages(
     recent_topics: list[str] | None = None,
     character_prompt: str = "",
     lesson_type: str = "standard",
+    plan_hint: str | None = None,
 ) -> list[dict[str, str]]:
-    return build_lesson_prompt(topic, level, profile, recent_topics, character_prompt, lesson_type)
+    return build_lesson_prompt(topic, level, profile, recent_topics, character_prompt, lesson_type, plan_hint)
 
 
 def _build_slides_messages(
@@ -247,8 +252,9 @@ def _build_slides_messages(
     level: str | None = None,
     character_prompt: str = "",
     lesson_type: str = "standard",
+    plan_hint: str | None = None,
 ) -> list[dict[str, str]]:
-    system = _render_system_prompt(SLIDES_SYSTEM_PROMPT, level, character_prompt=character_prompt, lesson_type=lesson_type)
+    system = _render_system_prompt(SLIDES_SYSTEM_PROMPT, level, character_prompt=character_prompt, lesson_type=lesson_type, plan_hint=plan_hint)
     return _step_messages(system, f"Topic: {topic}. Give me the key ideas (slides) for this lesson.")
 
 
@@ -257,8 +263,9 @@ def _build_tasks_messages(
     level: str | None = None,
     character_prompt: str = "",
     lesson_type: str = "standard",
+    plan_hint: str | None = None,
 ) -> list[dict[str, str]]:
-    system = _render_system_prompt(TASKS_SYSTEM_PROMPT, level, character_prompt=character_prompt, lesson_type=lesson_type)
+    system = _render_system_prompt(TASKS_SYSTEM_PROMPT, level, character_prompt=character_prompt, lesson_type=lesson_type, plan_hint=plan_hint)
     return _step_messages(system, f"Topic: {topic}. Create the speaking tasks for this lesson.")
 
 
@@ -304,24 +311,71 @@ def lesson_content_to_json(content: LessonContent) -> str:
     return json.dumps(asdict(content), ensure_ascii=False)
 
 
-def lesson_content_from_json(raw: str) -> LessonContent:
-    payload = json.loads(raw)
+def _str_list(value) -> list[str]:
+    """Список строк из JSON: не-списки и битые элементы пропускаются."""
+    if not isinstance(value, list):
+        return []
+    return [v for v in value if isinstance(v, str)]
+
+
+def lesson_content_from_json(raw: str) -> LessonContent | None:
+    """Восстанавливает LessonContent из JSON сессии урока.
+
+    Терпима к неполным/битым полям: словарные элементы получают дефолты,
+    битые элементы пропускаются. Если это не JSON-объект — возвращает None
+    (урок считается повреждённым; вызывающая сторона закрывает его).
+    """
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        logger.warning("lesson_content_from_json: невалидный JSON (%s)", type(raw).__name__)
+        return None
+    if not isinstance(payload, dict):
+        logger.warning("lesson_content_from_json: ожидался объект, получен %s", type(payload).__name__)
+        return None
+
     grammar_raw = payload.get("grammar")
     grammar: GrammarBlock | None = None
     if isinstance(grammar_raw, dict):
         grammar = GrammarBlock(
             rule=str(grammar_raw.get("rule", "")),
             explanation_ru=str(grammar_raw.get("explanation_ru", "")),
-            examples=[str(e) for e in (grammar_raw.get("examples") or [])],
+            examples=[str(e) for e in (grammar_raw.get("examples") or []) if isinstance(e, str)],
         )
+
+    vocabulary: list[VocabWord] = []
+    raw_vocab = payload.get("vocabulary")
+    if isinstance(raw_vocab, list):
+        for item in raw_vocab:
+            if not isinstance(item, dict):
+                continue
+            try:
+                vocabulary.append(
+                    VocabWord(
+                        word=str(item.get("word", "")),
+                        translation=str(item.get("translation", "")),
+                        example=str(item.get("example", "")),
+                    )
+                )
+            except (TypeError, ValueError):
+                logger.warning("lesson_content_from_json: пропущен битый элемент словаря")
+                continue
+
+    topic_raw = payload.get("topic")
+    intro_raw = payload.get("intro")
+    lesson_type_raw = payload.get("lesson_type")
     return LessonContent(
-        topic=str(payload.get("topic", "")),
-        intro=str(payload.get("intro", "")),
-        vocabulary=[VocabWord(**item) for item in payload.get("vocabulary") or []],
-        slides=[str(s) for s in payload.get("slides") or []],
+        topic=topic_raw if isinstance(topic_raw, str) else "",
+        intro=intro_raw if isinstance(intro_raw, str) else "",
+        vocabulary=vocabulary,
+        slides=_str_list(payload.get("slides")),
         grammar=grammar,
-        tasks=[str(t) for t in payload.get("tasks") or []],
-        lesson_type=str(payload.get("lesson_type", "standard")),
+        tasks=_str_list(payload.get("tasks")),
+        lesson_type=(
+            lesson_type_raw
+            if isinstance(lesson_type_raw, str) and lesson_type_raw
+            else "standard"
+        ),
     )
 
 
@@ -408,9 +462,10 @@ class LessonService:
         recent_topics: list[str] | None = None,
         character_prompt: str = "",
         lesson_type: str = "standard",
+        plan_hint: str | None = None,
     ) -> LessonContent:
         core_raw = await self._step(
-            _build_core_messages(topic, level=level, profile=profile, recent_topics=recent_topics, character_prompt=character_prompt, lesson_type=lesson_type)
+            _build_core_messages(topic, level=level, profile=profile, recent_topics=recent_topics, character_prompt=character_prompt, lesson_type=lesson_type, plan_hint=plan_hint)
         )
         if not core_raw:
             raise LessonParseError("LLM не вернул ядро урока")
@@ -419,8 +474,8 @@ class LessonService:
 
         base = {"topic": content.topic or topic or "", "level": level, "character_prompt": character_prompt, "lesson_type": lesson_type}
         slides_raw, tasks_raw = await asyncio.gather(
-            self._step(_build_slides_messages(base["topic"], level=level, character_prompt=character_prompt, lesson_type=lesson_type)),
-            self._step(_build_tasks_messages(base["topic"], level=level, character_prompt=character_prompt, lesson_type=lesson_type)),
+            self._step(_build_slides_messages(base["topic"], level=level, character_prompt=character_prompt, lesson_type=lesson_type, plan_hint=plan_hint)),
+            self._step(_build_tasks_messages(base["topic"], level=level, character_prompt=character_prompt, lesson_type=lesson_type, plan_hint=plan_hint)),
         )
         content.slides = extract_str_list(slides_raw, "slides") or content.slides
         content.tasks = extract_str_list(tasks_raw, "tasks") or content.tasks

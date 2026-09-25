@@ -23,6 +23,12 @@ from aiogram.types import CallbackQuery, Message
 
 from core.characters import character_prompt
 from core.lesson_notes import LessonNoteService
+from core.lesson_plan import (
+    PLAN_LESSON_COUNT,
+    LessonPlan,
+    LessonPlanService,
+    next_plan_index,
+)
 from core.srs import SRSService
 from core.lessons import (
     LESSON_STEPS,
@@ -33,9 +39,9 @@ from core.lessons import (
 )
 from core.progress import ProgressService
 from core.profile import merge_weak_areas, to_profile_snippet
-from storage.repo import LessonNote, Repository, TopicProposal, UserProfile
+from storage.repo import LessonNote, LessonPlanRow, Repository, TopicProposal, UserProfile
 
-from .formatters import format_lesson_note, format_lesson_step, format_return_hook
+from .formatters import format_lesson_note, format_lesson_plan, format_lesson_step, format_return_hook
 from .keyboards import lesson_keyboard, lesson_recap_keyboard, main_menu, premium_upsell_keyboard, topic_proposals_keyboard
 from .quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
 from .utils import escape
@@ -56,6 +62,28 @@ def _finished_text(content, note: LessonNote | None = None) -> str:
         parts.append("\n\n")
     parts.append("Загляни в /stats, чтобы увидеть свой прогресс. Хочешь новую тему? Жми /lesson!")
     return "".join(parts)
+
+
+_CORRUPT_LESSON_TEXT = (
+    "⚠️ Урок повреждён и не может быть продолжен.\n"
+    "Я закрыл его — начни новый: /lesson"
+)
+
+
+async def _close_corrupt_lesson(callback: CallbackQuery, repo: Repository, user_id: int) -> None:
+    """Закрывает сессию урока с битым content_json: finish + вежливое сообщение + меню."""
+    try:
+        await repo.finish_active_lessons(user_id)
+    except Exception:
+        logger.exception("Не удалось закрыть повреждённый урок user=%s", user_id)
+    try:
+        await callback.message.edit_text(_CORRUPT_LESSON_TEXT, reply_markup=main_menu())
+    except Exception:
+        try:
+            await callback.message.answer(_CORRUPT_LESSON_TEXT, reply_markup=main_menu())
+        except Exception:
+            logger.exception("Не удалось сообщить о повреждённом уроке user=%s", user_id)
+    logger.warning("Урок повреждён (битый content_json), закрыт: user=%s", user_id)
 
 
 async def _send_return_hook(callback: CallbackQuery, user, repo: Repository, srs) -> None:
@@ -103,6 +131,61 @@ async def _create_lesson_note(
     except Exception:
         logger.exception("Не удалось создать заметку урока user=%s lesson=%s", user_id, session_id)
         return None
+
+
+async def _maybe_generate_plan(
+    message: Message,
+    user,
+    repo: Repository,
+    plan_service: LessonPlanService | None = None,
+    quota: QuotaGuard | None = None,
+) -> None:
+    """Генерирует план после каждых 12 завершённых уроков. Ошибки не ломают завершение урока.
+
+    Фоновая генерация: при QuotaExceeded план пропускается (self-heal при следующем уроке).
+    """
+    try:
+        if plan_service is None:
+            return
+        completed = await repo.count_finished_lessons(user.id)
+        if completed < PLAN_LESSON_COUNT:
+            return
+        row = await repo.get_lesson_plan(user.id)
+        if row is not None and row.based_on_lessons + row.horizon <= completed:
+            pass  # план исчерпан — регенерация
+        elif row is not None:
+            return  # план ещё актуален
+        # row is None -> генерируем (само-хил после фейла)
+        if quota is not None:
+            await quota.check(user.id)
+        recent_notes = await repo.get_lesson_notes(user.id, limit=50)
+        recent_topics = list(reversed([n.topic for n in recent_notes])) if recent_notes else []
+        profile = await repo.get_profile(user.id)
+        plan = await plan_service.generate(
+            level=user.level,
+            profile=to_profile_snippet(profile) or None,
+            recent_topics=recent_topics,
+            completed_lessons=completed,
+        )
+        if not plan.lessons:
+            return
+        await repo.save_lesson_plan(
+            LessonPlanRow(
+                user_id=user.id,
+                plan_json=plan.to_json(),
+                horizon=PLAN_LESSON_COUNT,
+                based_on_lessons=completed,
+                generated_at=datetime.now(timezone.utc).isoformat(),
+            )
+        )
+        if quota is not None:
+            await quota.consume(user.id, cost=1)
+        await message.answer(format_lesson_plan(plan, completed=completed), reply_markup=main_menu())
+        logger.info("План уроков сгенерирован: user=%s completed=%s lessons=%s", user.id, completed, len(plan.lessons))
+    except QuotaExceeded:
+        logger.debug("План урока пропущен (квота исчерпана): user=%s", user.id)
+    except Exception:
+        logger.exception("Не удалось сгенерировать план уроков user=%s", user.id)
 
 
 async def _save_lesson_vocabulary(repo: Repository, user_id: int, content, session_id: int, srs=None) -> None:
@@ -168,6 +251,25 @@ def _pick_lesson_type() -> str:
     return chosen
 
 
+async def _plan_hint_for_topic(repo: Repository, user, topic: str) -> str | None:
+    """plan_hint для выбранной вручную темы — только если она совпадает с плановой."""
+    try:
+        row = await repo.get_lesson_plan(user.id)
+        if row is None:
+            return None
+        completed = await repo.count_finished_lessons(user.id)
+        idx = next_plan_index(row.based_on_lessons, completed, row.horizon)
+        if idx is None:
+            return None
+        lp = LessonPlan.from_json(row.plan_json)
+        if idx >= len(lp.lessons) or lp.lessons[idx].topic != topic:
+            return None
+        return f"Plan lesson {idx + 1}/{row.horizon}: {topic}. Focus: {lp.lessons[idx].focus}"
+    except Exception:
+        logger.warning("Не удалось получить plan_hint user=%s", user.id, exc_info=True)
+        return None
+
+
 async def _start_lesson(target, repo: Repository, lesson_service: LessonService, topic: str | None, user_from, quota: QuotaGuard | None = None) -> None:
     user = await repo.get_or_create_user(
         user_from.id,
@@ -194,7 +296,25 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
             await target.answer(QUOTA_EXCEEDED_TEXT, reply_markup=premium_upsell_keyboard())
             return
 
-    status = await target.answer("⏳ Составляю структурированный урок...")
+    plan_hint: str | None = None
+    plan_status_line = ""
+    if topic is None:
+        try:
+            completed = await repo.count_finished_lessons(user.id)
+            row = await repo.get_lesson_plan(user.id)
+            if row is not None:
+                lp = LessonPlan.from_json(row.plan_json)
+                idx = next_plan_index(row.based_on_lessons, completed, row.horizon)
+                if idx is not None and idx < len(lp.lessons):
+                    topic = lp.lessons[idx].topic
+                    plan_hint = f"Plan lesson {idx + 1}/{row.horizon}: {topic}. Focus: {lp.lessons[idx].focus}"
+                    plan_status_line = f"📖 Продолжаю по плану: урок {idx + 1}/{row.horizon}\n"
+        except Exception:
+            logger.warning("Не удалось применить план уроков user=%s", user.id, exc_info=True)
+    else:
+        plan_hint = await _plan_hint_for_topic(repo, user, topic)
+
+    status = await target.answer(f"{plan_status_line}⏳ Составляю структурированный урок...")
     try:
         profile = await repo.get_profile(user.id)
         recent_notes = await repo.get_lesson_notes(user.id, limit=50)
@@ -211,7 +331,12 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
                 await status.edit_text("⚠️ Не удалось подобрать темы. Попробуй снова: /lesson")
                 return
             if quota is not None:
-                await quota.consume(user.id, cost=1)
+                try:
+                    await quota.consume(user.id, cost=1)
+                except QuotaExceeded:
+                    logger.warning(
+                        "Гонка квоты при списании за темы: user=%s — списание пропущено", user.id
+                    )
             await repo.save_topic_proposals(
                 user.id,
                 [TopicProposal(topic=p["topic"], description=p["description"]) for p in proposals],
@@ -231,6 +356,7 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
             recent_topics=recent_topics,
             character_prompt=char_prompt,
             lesson_type=_pick_lesson_type(),
+            plan_hint=plan_hint,
         )
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)
@@ -238,7 +364,12 @@ async def _start_lesson(target, repo: Repository, lesson_service: LessonService,
         return
 
     if quota is not None:
-        await quota.consume(user.id, cost=3)
+        try:
+            await quota.consume(user.id, cost=3)
+        except QuotaExceeded:
+            logger.warning(
+                "Гонка квоты при списании урока: user=%s — урок начат, списание пропущено", user.id
+            )
 
     session = await repo.start_lesson(user.id, content.topic, lesson_content_to_json(content))
     intro = format_lesson_step("intro", content)
@@ -288,6 +419,7 @@ async def cb_select_topic(
         recent_notes = await repo.get_lesson_notes(user.id, limit=50)
         recent_topics = list(reversed([n.topic for n in recent_notes])) if recent_notes else None
         char_prompt = character_prompt(profile.character if profile else "")
+        plan_hint = await _plan_hint_for_topic(repo, user, selected.topic)
         content = await lesson_service.generate(
             selected.topic,
             level=user.level,
@@ -295,6 +427,7 @@ async def cb_select_topic(
             recent_topics=recent_topics,
             character_prompt=char_prompt,
             lesson_type=_pick_lesson_type(),
+            plan_hint=plan_hint,
         )
     except Exception as exc:
         logger.exception("Ошибка генерации урока: %s", exc)
@@ -302,7 +435,12 @@ async def cb_select_topic(
         return
 
     if quota is not None:
-        await quota.consume(user.id, cost=3)
+        try:
+            await quota.consume(user.id, cost=3)
+        except QuotaExceeded:
+            logger.warning(
+                "Гонка квоты при списании урока: user=%s — урок начат, списание пропущено", user.id
+            )
 
     session = await repo.start_lesson(user.id, content.topic, lesson_content_to_json(content))
     intro = format_lesson_step("intro", content)
@@ -326,13 +464,20 @@ async def cb_lesson_next(
     srs: SRSService = None,
     state: FSMContext = None,
     quota: QuotaGuard | None = None,
+    plan_service: LessonPlanService | None = None,
 ) -> None:
+    nav_owned = False
     if state:
         current = await state.get_state()
+        if current and "ReviewState" in current:
+            # Пользователь на середине /review: не трогаем его FSM и не ведём в урок.
+            await callback.answer("📖 Сейчас идёт повторение слов — ответь текстом или заверши его (⏹️).")
+            return
         if current and "LessonNav" in current:
             await callback.answer()
             return
         await state.set_state(LessonNav.processing)
+        nav_owned = True
     try:
         user = await repo.get_or_create_user(
             callback.from_user.id,
@@ -346,6 +491,9 @@ async def cb_lesson_next(
         await callback.answer()
 
         content = lesson_content_from_json(session.content_json)
+        if content is None:
+            await _close_corrupt_lesson(callback, repo, user.id)
+            return
         step_name = LESSON_STEPS[session.step]
 
         # Внутри шага "tasks" перебираем задания по одному.
@@ -370,6 +518,7 @@ async def cb_lesson_next(
 
             await _send_return_hook(callback, user, repo, srs)
             await announce_new_achievements(callback.message, user, repo, reply_markup=main_menu())
+            await _maybe_generate_plan(callback.message, user, repo, plan_service, quota)
             return
 
         await repo.update_lesson(session.id, step=new_step, task_index=new_task_index)
@@ -377,8 +526,11 @@ async def cb_lesson_next(
         kb = lesson_recap_keyboard() if LESSON_STEPS[new_step] == "recap" else lesson_keyboard()
         await callback.message.edit_text(text, reply_markup=kb)
     finally:
-        if state:
-            await state.clear()
+        # Чистим только свой LessonNav: state.clear() затёр бы чужой FSM (например, ReviewState).
+        if state and nav_owned:
+            current = await state.get_state()
+            if current and "LessonNav" in current:
+                await state.clear()
 
 
 @router.callback_query(F.data == "lesson:repeat")
@@ -394,6 +546,9 @@ async def cb_lesson_repeat(callback: CallbackQuery, repo: Repository) -> None:
         return
     await callback.answer()
     content = lesson_content_from_json(session.content_json)
+    if content is None:
+        await _close_corrupt_lesson(callback, repo, user.id)
+        return
     text = format_lesson_step(LESSON_STEPS[session.step], content, session.task_index)
     kb = lesson_recap_keyboard() if LESSON_STEPS[session.step] == "recap" else lesson_keyboard()
     await callback.message.edit_text(text, reply_markup=kb)
@@ -407,13 +562,20 @@ async def cb_lesson_end(
     srs: SRSService = None,
     state: FSMContext = None,
     quota: QuotaGuard | None = None,
+    plan_service: LessonPlanService | None = None,
 ) -> None:
+    nav_owned = False
     if state:
         current = await state.get_state()
+        if current and "ReviewState" in current:
+            # Пользователь на середине /review: не трогаем его FSM и не ведём в урок.
+            await callback.answer("📖 Сейчас идёт повторение слов — ответь текстом или заверши его (⏹️).")
+            return
         if current and "LessonNav" in current:
             await callback.answer()
             return
         await state.set_state(LessonNav.processing)
+        nav_owned = True
     try:
         user = await repo.get_or_create_user(
             callback.from_user.id,
@@ -427,6 +589,9 @@ async def cb_lesson_end(
         await callback.answer()
 
         content = lesson_content_from_json(session.content_json)
+        if content is None:
+            await _close_corrupt_lesson(callback, repo, user.id)
+            return
         # Завершаем урок ДО генерации заметки: повторный тап не создаст дубль.
         await repo.finish_active_lessons(user.id)
         await callback.message.bot.send_chat_action(callback.message.chat.id, action="typing")
@@ -437,6 +602,10 @@ async def cb_lesson_end(
 
         await _send_return_hook(callback, user, repo, srs)
         await announce_new_achievements(callback.message, user, repo, reply_markup=main_menu())
+        await _maybe_generate_plan(callback.message, user, repo, plan_service, quota)
     finally:
-        if state:
-            await state.clear()
+        # Чистим только свой LessonNav: state.clear() затёр бы чужой FSM (например, ReviewState).
+        if state and nav_owned:
+            current = await state.get_state()
+            if current and "LessonNav" in current:
+                await state.clear()

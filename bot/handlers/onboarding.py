@@ -17,6 +17,9 @@ from aiogram.types import CallbackQuery
 from core.lessons import LessonService
 from storage.repo import Repository, UserProfile
 
+from ..keyboards import premium_upsell_keyboard
+from ..quota import QUOTA_EXCEEDED_TEXT, QuotaExceeded, QuotaGuard
+
 from .interests import ONBOARDING_INTEREST_BY_CODE, _format_interests, _parse_interests
 
 router = Router()
@@ -113,13 +116,29 @@ async def cb_onb_interest(
     callback: CallbackQuery,
     repo: Repository,
     lesson_service: LessonService,
+    quota: QuotaGuard | None = None,
 ) -> None:
     code = callback.data.split(":")[-1]
     if code == "done":
         await callback.answer()
+        # Квота проверяется ДО любого LLM-вызова: рестарт онбординга через /start
+        # (level is None) не должен давать бесплатную генерацию тем/урока.
+        if quota is not None:
+            try:
+                await quota.check(callback.from_user.id)
+            except QuotaExceeded:
+                logger.info(
+                    "Onboarding: квота исчерпана, генерация отклонена user=%s",
+                    callback.from_user.id,
+                )
+                await callback.message.edit_text(
+                    QUOTA_EXCEEDED_TEXT,
+                    reply_markup=premium_upsell_keyboard(),
+                )
+                return
         await callback.message.edit_text(_done_text())
         from bot.lessons import _start_lesson
-        await _start_lesson(callback.message, repo, lesson_service, None, callback.from_user)
+        await _start_lesson(callback.message, repo, lesson_service, None, callback.from_user, quota)
         return
 
     user = await repo.get_or_create_user(

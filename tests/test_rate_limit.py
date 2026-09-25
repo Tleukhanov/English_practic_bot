@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from bot.rate_limit import LLMThrottle
@@ -65,3 +67,20 @@ async def test_single_char_text_practice_limited(throttle):
     for _ in range(3):
         assert await throttle(_ok_handler, msg, {}) == "OK"
     assert await throttle(_ok_handler, msg, {}) is None
+
+
+async def test_stale_rate_limit_entries_evicted():
+    """Записи, целиком вышедшие за окно, вычищаются — словари не растут вечно."""
+    t = LLMThrottle(window_sec=0.05, limit=2, min_interval=0.0)
+    user_a = FakeMessage(text="hello", user_id=61)
+    assert await t(_ok_handler, user_a, {}) == "OK"
+    assert await t(_ok_handler, user_a, {}) == "OK"
+    assert await t(_ok_handler, user_a, {}) is None  # флуд -> предупреждение
+    assert 61 in t._actions
+    assert 61 in t._last_warned
+
+    await asyncio.sleep(0.2)  # всё окно прошло
+    user_b = FakeMessage(text="hello", user_id=62)
+    assert await t(_ok_handler, user_b, {}) == "OK"  # чужое действие триггерит чистку
+    assert 61 not in t._actions
+    assert 61 not in t._last_warned

@@ -1,6 +1,14 @@
+import asyncio
+
 import pytest
 
-from bot.handlers.kaspi import _grant_order, _make_order_code
+from bot.handlers.kaspi import (
+    ORDER_CODE_LENGTH,
+    _grant_order,
+    _make_order_code,
+    _make_unique_order_code,
+    ensure_pending_order,
+)
 
 from storage.repo import KaspiOrder
 from storage.sqlite import SQLiteRepository
@@ -79,19 +87,21 @@ async def test_grant_burns_coupon(repo):
     assert active is None
 
 
-async def test_coupon_burned_on_order_creation_cannot_be_reused(repo):
-    """Скидочный купон сгорает при создании заказа, поэтому не переиспользуется."""
+async def test_coupon_burned_only_on_grant_repo(repo):
+    """Купон НЕ сгорает при создании заказа — только при подтверждении в _grant_order."""
     user = await repo.get_or_create_user(2009)
     coupon = await repo.create_coupon(user.id, 20, "2099-01-01")
 
-    first = await repo.create_order(user.id, 7, 1592, 20, coupon.id, _make_order_code())
-    assert coupon.id > 0
-    await repo.mark_coupon_used(first.coupon_id, user.id)
+    order = await ensure_pending_order(repo, user.id, 7, 1990)
+    assert order.coupon_id == coupon.id
+    assert order.discount_pct == 20
 
-    assert await repo.get_active_coupon(user.id) is None
+    # создание заказа купон не трогает
+    active = await repo.get_active_coupon(user.id)
+    assert active is not None and active.id == coupon.id
 
-    second = await repo.create_order(user.id, 7, 1990, 0, 0, _make_order_code())
-    assert second.coupon_id == 0
+    # сгорает только при подтверждении
+    await _grant_order(repo, order)
     assert await repo.get_active_coupon(user.id) is None
 
 
@@ -121,7 +131,99 @@ async def test_switch_tariff_creates_new_order(repo):
     assert restored.status == KaspiOrder.STATUS_CANCELLED
 
 
-def test_make_order_code_format():
+def test_make_order_code_length():
     code = _make_order_code()
     assert code.startswith("BOT-")
-    assert len(code) == 8
+    assert len(code) - len("BOT-") >= 6
+    assert len(code) == len("BOT-") + ORDER_CODE_LENGTH
+
+
+async def test_switch_tariff_keeps_discount(repo):
+    """Смена тарифа не теряет скидку молча: купон живой, применён к новому заказу."""
+    user = await repo.get_or_create_user(2011)
+    coupon = await repo.create_coupon(user.id, 30, "2099-01-01")
+
+    first = await ensure_pending_order(repo, user.id, 7, 1990)
+    assert first.discount_pct == 30
+    assert first.coupon_id == coupon.id
+
+    second = await ensure_pending_order(repo, user.id, 30, 3990)
+    assert second.plan_days == 30
+    assert second.discount_pct == 30
+    assert second.coupon_id == coupon.id
+    # купон никуда не делся
+    assert await repo.get_active_coupon(user.id) is not None
+    # старый pending отменён, живой ровно один
+    assert (await repo.get_order(first.id)).status == KaspiOrder.STATUS_CANCELLED
+    pending = await repo.get_pending_order(user.id)
+    assert pending.id == second.id
+    assert pending.plan_days == 30
+
+
+async def test_double_tap_creates_one_live_order(repo):
+    """Двойной тап «Оплатить» → один живой pending-заказ, второй тап возвращает его же."""
+    user = await repo.get_or_create_user(2012)
+    a, b = await asyncio.gather(
+        ensure_pending_order(repo, user.id, 7, 1990),
+        ensure_pending_order(repo, user.id, 7, 1990),
+    )
+    assert a.id == b.id
+    cursor = await repo._conn.execute(
+        "SELECT COUNT(*) AS n FROM kaspi_orders WHERE user_id = ? AND status = ?",
+        (user.id, KaspiOrder.STATUS_PENDING),
+    )
+    row = await cursor.fetchone()
+    assert row["n"] == 1
+
+
+async def test_ensure_pending_cancels_existing_pendings(repo):
+    """Новый тариф при уже накопившихся pending: все старые отменены, остаётся один живой."""
+    user = await repo.get_or_create_user(2013)
+    old1 = await repo.create_order(user.id, 7, 1990, 0, 0, "BOT-OLD001")
+    old2 = await repo.create_order(user.id, 7, 1990, 0, 0, "BOT-OLD002")
+
+    order = await ensure_pending_order(repo, user.id, 30, 3990)
+    assert order.plan_days == 30
+    assert (await repo.get_order(old1.id)).status == KaspiOrder.STATUS_CANCELLED
+    assert (await repo.get_order(old2.id)).status == KaspiOrder.STATUS_CANCELLED
+    pending = await repo.get_pending_order(user.id)
+    assert pending.id == order.id
+
+
+async def test_unique_order_codes_for_many_orders(repo):
+    """Коды заказов уникальны (каждый длиннее 6 символов после префикса)."""
+    user = await repo.get_or_create_user(2014)
+    codes = set()
+    for _ in range(25):
+        order = await repo.replace_pending_order(
+            user.id, 7, 1990, 0, 0, _make_order_code()
+        )
+        codes.add(order.order_code)
+        assert len(order.order_code) - len("BOT-") >= 6
+    assert len(codes) == 25
+
+
+async def test_make_unique_order_code_retries_on_collision(repo, monkeypatch):
+    user = await repo.get_or_create_user(2015)
+    taken = "BOT-" + "A" * ORDER_CODE_LENGTH
+    await repo.create_order(user.id, 7, 1990, 0, 0, taken)
+
+    calls = {"n": 0}
+
+    def fake_choices(alphabet, k=ORDER_CODE_LENGTH):
+        calls["n"] += 1
+        return (["A"] if calls["n"] == 1 else ["B"]) * k
+
+    monkeypatch.setattr("bot.handlers.kaspi.random.choices", fake_choices)
+    code = await _make_unique_order_code(repo)
+    assert calls["n"] == 2
+    assert code == "BOT-" + "B" * ORDER_CODE_LENGTH
+    assert not await repo.is_order_code_taken(code)
+
+
+async def test_is_order_code_taken_ignores_cancelled(repo):
+    user = await repo.get_or_create_user(2016)
+    order = await repo.create_order(user.id, 7, 1990, 0, 0, "BOT-TEST01")
+    assert await repo.is_order_code_taken("BOT-TEST01") is True
+    await repo.cancel_order(order.id)
+    assert await repo.is_order_code_taken("BOT-TEST01") is False

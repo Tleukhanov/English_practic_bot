@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from bot.quota import QuotaExceeded, QuotaGuard
@@ -118,3 +120,54 @@ async def test_unlimited_promo_still_works(repo):
 
 def test_premium_command_import_smoke():
     import bot.handlers.premium  # noqa: F401
+
+
+async def test_concurrent_consume_is_atomic_at_limit(repo):
+    """Гонка: count = limit-1, два параллельных consume — один ок, второй QuotaExceeded."""
+    guard = QuotaGuard(repo, daily_limit=5)
+    user = await repo.get_or_create_user(1012)
+    await repo.increment_llm_usage(user.id, guard._today(), 4)  # остался 1 слот
+
+    results = await asyncio.gather(
+        guard.consume(user.id),
+        guard.consume(user.id),
+        return_exceptions=True,
+    )
+    ok = [r for r in results if r is None]
+    raises = [r for r in results if isinstance(r, QuotaExceeded)]
+    assert len(ok) == 1
+    assert len(raises) == 1
+    # счётчик не превысил лимит даже при гонке
+    assert await repo.get_llm_usage(user.id, guard._today()) == 5
+
+
+async def test_concurrent_costly_consume_bounded_by_limit(repo):
+    """Гонка с cost=2: суммарно нельзя списать больше лимита."""
+    guard = QuotaGuard(repo, daily_limit=4)
+    user = await repo.get_or_create_user(1014)
+    await repo.increment_llm_usage(user.id, guard._today(), 2)  # свободно 2
+
+    results = await asyncio.gather(
+        guard.consume(user.id, cost=2),
+        guard.consume(user.id, cost=2),
+        return_exceptions=True,
+    )
+    ok = [r for r in results if r is None]
+    raises = [r for r in results if isinstance(r, QuotaExceeded)]
+    assert len(ok) == 1
+    assert len(raises) == 1
+    assert await repo.get_llm_usage(user.id, guard._today()) == 4
+
+
+async def test_check_and_consume_raise_after_limit(repo):
+    """После исчерпания лимита кидают и check, и consume (счётчик не растёт)."""
+    guard = QuotaGuard(repo, daily_limit=2)
+    user = await repo.get_or_create_user(1013)
+    await guard.consume(user.id)
+    await guard.consume(user.id)
+    assert await repo.get_llm_usage(user.id, guard._today()) == 2
+    with pytest.raises(QuotaExceeded):
+        await guard.check(user.id)
+    with pytest.raises(QuotaExceeded):
+        await guard.consume(user.id)
+    assert await repo.get_llm_usage(user.id, guard._today()) == 2

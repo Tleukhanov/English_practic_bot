@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 
 from aiogram import F, Router
@@ -85,14 +86,26 @@ async def get_or_create_user(message: Message, repo: Repository) -> UserRow:
 
 # Сериализуем фоновые обновления профиля: два параллельных перезаписывают друг друга
 # из устаревших снапшотов (last-write-wins теряет данные).
-_PROFILE_LOCKS: dict[int, asyncio.Lock] = {}
+# Значение — (Lock, последний доступ в monotonic): старые и незанятые локи
+# вычищаются при доступе, чтобы словарь не рос вечно.
+_PROFILE_LOCKS: dict[int, tuple[asyncio.Lock, float]] = {}
+_PROFILE_LOCK_TTL_SEC = 600.0
 
 
 def _profile_lock(user_id: int) -> asyncio.Lock:
-    lock = _PROFILE_LOCKS.get(user_id)
-    if lock is None:
+    """Возвращает лок юзера, чистка протухших (TTL) и незанятых локов."""
+    now = time.monotonic()
+    for uid in list(_PROFILE_LOCKS):
+        lock, touched = _PROFILE_LOCKS[uid]
+        if not lock.locked() and now - touched > _PROFILE_LOCK_TTL_SEC:
+            del _PROFILE_LOCKS[uid]
+    entry = _PROFILE_LOCKS.get(user_id)
+    if entry is None:
         lock = asyncio.Lock()
-        _PROFILE_LOCKS[user_id] = lock
+        _PROFILE_LOCKS[user_id] = (lock, now)
+        return lock
+    lock, _ = entry
+    _PROFILE_LOCKS[user_id] = (lock, now)
     return lock
 
 
@@ -123,7 +136,14 @@ async def _update_profile_background(
             updated = await profile_service.update(user_id, previous, dialogue)
             await repo.save_profile(updated)
             if quota is not None:
-                await quota.consume(user_id)
+                try:
+                    await quota.consume(user_id)
+                except QuotaExceeded:
+                    logger.warning(
+                        "Профиль сохранён, но списание не прошло (квота исчерпана): user=%s",
+                        user_id,
+                    )
+                    return
             logger.info("Профиль обновлён: user=%s", user_id)
     except QuotaExceeded:
         logger.debug("Профиль не обновлён (квота исчерпана): user=%s", user_id)
@@ -193,7 +213,16 @@ async def run_practice(
         )
 
     if quota is not None:
-        await quota.consume(user.id)
+        try:
+            await quota.consume(user.id)
+        except QuotaExceeded:
+            # check() прошёл до LLM-вызова, но к моменту списания лимит
+            # съели конкурентные сообщения. Работа уже выполнена и ответ готов:
+            # не роняем хэндлер и не прячем ответ — просто логируем недочёт.
+            logger.warning(
+                "Ответ уже сгенерирован, но consume не прошёл (квота исчерпана): user=%s",
+                user.id,
+            )
 
     return PracticeTurn(reply=reply, result=result, message_id=msg_id)
 

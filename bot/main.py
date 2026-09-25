@@ -16,6 +16,7 @@ from aiogram.types import BotCommand
 
 from core.diagnostic import DiagnosticService
 from core.lesson_notes import LessonNoteService
+from core.lesson_plan import LessonPlanService
 from core.lessons import LessonService
 from core.practice import PracticeService
 from core.profile import ProfileService
@@ -103,6 +104,7 @@ async def main() -> None:
     diagnostic = DiagnosticService(llm)
     profile_service = ProfileService(llm)
     note_service = LessonNoteService(llm)
+    plan_service = LessonPlanService(llm)
     srs_service = SRSService(repo)
 
     bot = Bot(
@@ -117,6 +119,7 @@ async def main() -> None:
     dp["diagnostic_service"] = diagnostic
     dp["profile_service"] = profile_service
     dp["note_service"] = note_service
+    dp["plan_service"] = plan_service
     dp["srs"] = srs_service
     dp["stt"] = stt
     dp["tts"] = tts

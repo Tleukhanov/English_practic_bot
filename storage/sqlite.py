@@ -24,6 +24,7 @@ from .repo import (
     KaspiOrder,
     LeaderboardRow,
     LessonNote,
+    LessonPlanRow,
     LessonSession,
     Payment,
     Repository,
@@ -113,6 +114,14 @@ CREATE TABLE IF NOT EXISTS lesson_notes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_lesson_notes_user ON lesson_notes(user_id, id);
+
+CREATE TABLE IF NOT EXISTS user_lesson_plans (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    plan_json TEXT NOT NULL DEFAULT '',
+    horizon INTEGER NOT NULL DEFAULT 12,
+    based_on_lessons INTEGER NOT NULL DEFAULT 0,
+    generated_at TEXT NOT NULL DEFAULT ''
+);
 
 CREATE TABLE IF NOT EXISTS topic_proposals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -277,6 +286,16 @@ class SQLiteRepository(Repository):
                 user_id INTEGER NOT NULL REFERENCES users(id),
                 achievement_id TEXT NOT NULL,
                 PRIMARY KEY (user_id, achievement_id)
+            )
+        """)
+
+        await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_lesson_plans (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id),
+                plan_json TEXT NOT NULL DEFAULT '',
+                horizon INTEGER NOT NULL DEFAULT 12,
+                based_on_lessons INTEGER NOT NULL DEFAULT 0,
+                generated_at TEXT NOT NULL DEFAULT ''
             )
         """)
 
@@ -691,6 +710,52 @@ class SQLiteRepository(Repository):
         )
         await conn.commit()
 
+    async def replace_pending_order(
+        self,
+        user_id: int,
+        plan_days: int,
+        amount: int,
+        discount_pct: int,
+        coupon_id: int,
+        order_code: str,
+    ) -> KaspiOrder:
+        """Отменяет все старые pending и создаёт новый заказ в одной транзакции."""
+        conn = self._require_conn()
+        try:
+            await conn.execute(
+                "UPDATE kaspi_orders SET status = ? WHERE user_id = ? AND status = ?",
+                (KaspiOrder.STATUS_CANCELLED, user_id, KaspiOrder.STATUS_PENDING),
+            )
+            cursor = await conn.execute(
+                "INSERT INTO kaspi_orders "
+                "(user_id, plan_days, amount, discount_pct, coupon_id, order_code, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, plan_days, amount, discount_pct, coupon_id, order_code, _now()),
+            )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
+        return KaspiOrder(
+            id=cursor.lastrowid,
+            user_id=user_id,
+            plan_days=plan_days,
+            amount=amount,
+            discount_pct=discount_pct,
+            coupon_id=coupon_id,
+            order_code=order_code,
+            status=KaspiOrder.STATUS_PENDING,
+            created_at=_now(),
+        )
+
+    async def is_order_code_taken(self, order_code: str) -> bool:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT 1 FROM kaspi_orders WHERE order_code = ? AND status != ? LIMIT 1",
+            (order_code, KaspiOrder.STATUS_CANCELLED),
+        )
+        return await cursor.fetchone() is not None
+
     # ---------- аналитика (события) ----------
 
     async def append_event(self, user_id: int, event_type: str, payload=None) -> None:
@@ -1071,6 +1136,56 @@ class SQLiteRepository(Repository):
             for row in rows
         ]
 
+    # ---------- план уроков / счётчик завершённых уроков ----------
+
+    async def get_lesson_plan(self, user_id: int) -> LessonPlanRow | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT user_id, plan_json, horizon, based_on_lessons, generated_at "
+            "FROM user_lesson_plans WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return LessonPlanRow(
+            user_id=row["user_id"],
+            plan_json=row["plan_json"],
+            horizon=row["horizon"],
+            based_on_lessons=row["based_on_lessons"],
+            generated_at=row["generated_at"],
+        )
+
+    async def save_lesson_plan(self, plan: LessonPlanRow) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "INSERT INTO user_lesson_plans "
+            "(user_id, plan_json, horizon, based_on_lessons, generated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET "
+            "plan_json = excluded.plan_json, horizon = excluded.horizon, "
+            "based_on_lessons = excluded.based_on_lessons, "
+            "generated_at = excluded.generated_at",
+            (
+                plan.user_id,
+                plan.plan_json,
+                plan.horizon,
+                plan.based_on_lessons,
+                plan.generated_at,
+            ),
+        )
+        await conn.commit()
+
+    async def count_finished_lessons(self, user_id: int) -> int:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT COUNT(*) AS cnt FROM lesson_sessions "
+            "WHERE user_id = ? AND status = 'finished'",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
     # ---------- диагностика уровня (Фаза 3) ----------
 
     @staticmethod
@@ -1120,24 +1235,17 @@ class SQLiteRepository(Repository):
         return self._row_to_diagnostic(row) if row else None
 
     async def append_diagnostic_answer(self, session_id: int, answer: str) -> None:
+        # Атомарное добавление ответа одним стейтментом: JSON1 доступен в SQLite, но
+        # json_array_append отсутствует — используем json_insert с путём '$[#]'.
         conn = self._require_conn()
-        cursor = await conn.execute(
-            "SELECT answers_json FROM diagnostic_sessions WHERE id = ?",
-            (session_id,),
-        )
-        row = await cursor.fetchone()
-        answers: list[str] = []
-        if row and row["answers_json"]:
-            try:
-                parsed = json.loads(row["answers_json"])
-            except (json.JSONDecodeError, TypeError):
-                parsed = None
-            if isinstance(parsed, list):
-                answers = [str(a) for a in parsed]
-        answers.append(answer)
         await conn.execute(
-            "UPDATE diagnostic_sessions SET answers_json = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(answers, ensure_ascii=False), _now(), session_id),
+            "UPDATE diagnostic_sessions SET "
+            "answers_json = CASE "
+            "  WHEN json_valid(answers_json) AND json_type(answers_json) = 'array' "
+            "  THEN json_insert(answers_json, '$[#]', ?) "
+            "  ELSE json_array(?) END, "
+            "updated_at = ? WHERE id = ?",
+            (answer, answer, _now(), session_id),
         )
         await conn.commit()
 
@@ -1161,8 +1269,9 @@ class SQLiteRepository(Repository):
     # ---------- предложения тем (Фаза 2) ----------
 
     async def save_topic_proposals(self, user_id: int, proposals: list[TopicProposal]) -> None:
+        # Единый неявный transaction (стиль sqlite.py): первый DML открывает BEGIN, commit в конце,
+        # rollback в except — без хрупкого явного BEGIN.
         conn = self._require_conn()
-        await conn.execute("BEGIN")
         try:
             await conn.execute("DELETE FROM topic_proposals WHERE user_id = ?", (user_id,))
             for p in proposals:
@@ -1450,8 +1559,8 @@ class SQLiteRepository(Repository):
         return [row["achievement_id"] for row in await cursor.fetchall()]
 
     async def save_shown_achievements(self, user_id: int, achievement_ids: list[str]) -> None:
+        # Единый неявный transaction (стиль sqlite.py): rollback по except.
         conn = self._require_conn()
-        await conn.execute("BEGIN")
         try:
             await conn.execute("DELETE FROM user_achievements WHERE user_id = ?", (user_id,))
             for aid in achievement_ids:

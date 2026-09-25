@@ -1,8 +1,148 @@
 """Tests for Phase 11 — Scheduler (reminders)."""
 
+import time
+from datetime import datetime, timezone, timedelta
+
 import pytest
+from aiogram.exceptions import TelegramRetryAfter
 from core.scheduler import _build_expiry_message, _build_reminder_message, ReminderDedupe
+from core import scheduler as sched
 from core.retention import RetentionInfo
+from storage.repo import Subscription, UserRow
+
+
+class FakeBot:
+    def __init__(self, fail_ids=None, flood_ids=None):
+        self.sent = []
+        self.times = []
+        self._fail_ids = set(fail_ids or ())
+        self._flood_ids = set(flood_ids or ())
+
+    async def send_message(self, chat_id, text):
+        if chat_id in self._flood_ids:
+            raise TelegramRetryAfter(method=None, message="flood", retry_after=0)
+        if chat_id in self._fail_ids:
+            raise RuntimeError("boom")
+        self.sent.append((chat_id, text))
+        self.times.append(time.monotonic())
+
+
+class FakeRepo:
+    def __init__(self, users, spins=None, subs=None, activity=None):
+        self.users = users
+        self.spins = spins or {}
+        self.subs = subs or {}
+        self.activity = activity or {}
+
+    async def get_all_users(self):
+        return self.users
+
+    async def get_last_spin_date(self, user_id):
+        return self.spins.get(user_id)
+
+    async def get_subscription(self, user_id):
+        return self.subs.get(user_id)
+
+    async def get_lesson_notes(self, user_id, limit=10):
+        return []
+
+    async def get_practice_dates(self, user_id, limit=50):
+        return []
+
+    async def get_last_activity(self, user_id):
+        return self.activity.get(user_id)
+
+
+def _stale_user(uid, tg_id, name="Anna"):
+    return UserRow(id=uid, tg_id=tg_id, first_name=name)
+
+
+def _stale_activity():
+    return (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+
+
+@pytest.fixture(autouse=True)
+def reset_scheduler_state(monkeypatch):
+    monkeypatch.setattr(sched, "SEND_PAUSE_SECONDS", 0.0)
+    monkeypatch.setattr(sched, "_practice_reminder_dedupe", sched.ReminderDedupe())
+    monkeypatch.setattr(
+        sched, "_wheel_reminder_throttle", sched.ReminderThrottle(24 * 60 * 60)
+    )
+    monkeypatch.setattr(sched, "_expiry_reminder_dedupe", sched.ReminderDedupe())
+    monkeypatch.setattr(sched, "_FLOOD_SLEEP_CAP_SECONDS", 0)
+
+
+@pytest.mark.asyncio
+async def test_mass_send_has_pause_between_recipients(monkeypatch):
+    monkeypatch.setattr(sched, "SEND_PAUSE_SECONDS", 0.05)
+    activity = _stale_activity()
+    repo = FakeRepo(
+        users=[_stale_user(1, 111), _stale_user(2, 222)],
+        activity={1: activity, 2: activity},
+    )
+    bot = FakeBot()
+    await sched.check_and_send_reminders(bot, repo)
+    assert len(bot.sent) == 2
+    assert bot.times[1] - bot.times[0] >= 0.04
+
+
+@pytest.mark.asyncio
+async def test_wheel_reminder_skips_user_without_spins():
+    today = datetime.now(timezone.utc).date().isoformat()
+    repo = FakeRepo(
+        users=[_stale_user(1, 111), _stale_user(2, 222), _stale_user(3, 333)],
+        spins={3: today},
+        subs={2: Subscription(user_id=2, plan_days=7, expires_at="2999-01-01T00:00:00+00:00")},
+    )
+    bot = FakeBot()
+    await sched.reminder_wheel_misses(bot, repo)
+    chat_ids = [chat_id for chat_id, _ in bot.sent]
+    assert chat_ids == [222]
+
+
+@pytest.mark.asyncio
+async def test_send_error_for_one_user_does_not_block_others():
+    activity = _stale_activity()
+    repo = FakeRepo(
+        users=[_stale_user(1, 111), _stale_user(2, 222), _stale_user(3, 333)],
+        activity={1: activity, 2: activity, 3: activity},
+    )
+    bot = FakeBot(fail_ids={222})
+    await sched.check_and_send_reminders(bot, repo)
+    chat_ids = [chat_id for chat_id, _ in bot.sent]
+    assert chat_ids == [111, 333]
+
+
+@pytest.mark.asyncio
+async def test_flood_wait_for_one_user_does_not_break_batch():
+    activity = _stale_activity()
+    repo = FakeRepo(
+        users=[_stale_user(1, 111), _stale_user(2, 222)],
+        activity={1: activity, 2: activity},
+    )
+    bot = FakeBot(flood_ids={111})
+    await sched.check_and_send_reminders(bot, repo)
+    chat_ids = [chat_id for chat_id, _ in bot.sent]
+    assert chat_ids == [222]
+
+
+@pytest.mark.asyncio
+async def test_daily_reminder_not_more_often_than_once_per_day():
+    repo = FakeRepo(users=[_stale_user(1, 111)], activity={1: _stale_activity()})
+    bot = FakeBot()
+    await sched.check_and_send_reminders(bot, repo)
+    await sched.check_and_send_reminders(bot, repo)
+    assert len(bot.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_wheel_reminder_not_more_often_than_once_a_day():
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()
+    repo = FakeRepo(users=[_stale_user(1, 111)], spins={1: yesterday})
+    bot = FakeBot()
+    await sched.reminder_wheel_misses(bot, repo)
+    await sched.reminder_wheel_misses(bot, repo)
+    assert len(bot.sent) == 1
 
 
 def test_build_reminder_no_activity():

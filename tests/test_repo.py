@@ -3,7 +3,7 @@ import json
 import pytest
 
 from storage.sqlite import SQLiteRepository
-from storage.repo import LessonNote, TopicProposal
+from storage.repo import KaspiOrder, LessonNote, TopicProposal
 
 
 @pytest.fixture
@@ -341,3 +341,35 @@ async def test_payment_idempotent_and_find(repo):
     found = await repo.find_payment("tg-pay-1")
     assert found is not None and found.amount == 499
     assert await repo.find_payment("missing") is None
+
+
+async def test_replace_pending_order_cancels_old_in_one_go(repo):
+    user = await repo.get_or_create_user(700)
+    first = await repo.create_order(user.id, 7, 1990, 0, 0, "BOT-AAAA01")
+    second = await repo.create_order(user.id, 7, 1990, 0, 0, "BOT-BBBB01")
+    third = await repo.replace_pending_order(user.id, 30, 3990, 10, 0, "BOT-CCCC01")
+
+    assert (await repo.get_order(first.id)).status == KaspiOrder.STATUS_CANCELLED
+    assert (await repo.get_order(second.id)).status == KaspiOrder.STATUS_CANCELLED
+    pending = await repo.get_pending_order(user.id)
+    assert pending.id == third.id
+    assert pending.plan_days == 30
+    assert pending.amount == 3990
+
+
+async def test_is_order_code_taken(repo):
+    user = await repo.get_or_create_user(701)
+    order = await repo.create_order(user.id, 7, 1990, 0, 0, "BOT-CODE01")
+    assert await repo.is_order_code_taken("BOT-CODE01") is True
+    await repo.cancel_order(order.id)
+    assert await repo.is_order_code_taken("BOT-CODE01") is False
+    assert await repo.is_order_code_taken("BOT-MISSING") is False
+
+
+async def test_append_diagnostic_answer_appends(repo):
+    user = await repo.get_or_create_user(702)
+    session = await repo.start_diagnostic(user.id, "[]")
+    await repo.append_diagnostic_answer(session.id, "a")
+    await repo.append_diagnostic_answer(session.id, "b")
+    diag = await repo.get_active_diagnostic(user.id)
+    assert json.loads(diag.answers_json) == ["a", "b"]

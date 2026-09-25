@@ -28,6 +28,23 @@ class FakeRng:
         return self._choice.pop(0) if self._choice else seq[0]
 
 
+class RacedRepo:
+    """Имитация гонки: «конкурент» успевает записать крутку раньше нашего спина."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self._raced = False
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def save_spin(self, user_id, date):
+        if not self._raced:
+            self._raced = True
+            await self._inner.save_spin(user_id, date)
+        return await self._inner.save_spin(user_id, date)
+
+
 @pytest.fixture
 async def repo(tmp_path):
     db = SQLiteRepository(str(tmp_path / "wheel_pity.db"))
@@ -127,3 +144,15 @@ async def test_duplicate_spin_no_double_subscription(repo):
     )
     row = await cursor.fetchone()
     assert row["n"] == 1
+
+
+async def test_race_does_not_corrupt_dry_streak(repo):
+    """Проигравший гонку спин не трогает сухую серию."""
+    user = await repo.get_or_create_user(205)
+    await repo.set_dry_streak(user.id, 3)
+    svc = WheelService(RacedRepo(repo), rng=FakeRng(random_values=[0.6]))
+
+    with pytest.raises(WheelCooldown):
+        await svc.spin(user.id)
+
+    assert await repo.get_dry_streak(user.id) == 3

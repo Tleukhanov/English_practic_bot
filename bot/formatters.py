@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from core.characters import get_character
 from core.diagnostic import DiagnosticAssessment, DiagnosticTask
+from core.lesson_plan import PLAN_LESSON_COUNT, LessonPlan
 from core.lessons import LESSON_STEPS, LessonContent
 from core.models import PracticeResult
 from storage.repo import LessonNote, Stats, UserProfile
@@ -290,6 +291,26 @@ def format_return_hook(streak: int, due_words: int) -> str:
         words = _plural_ru(due_words, "слово", "слова", "слов")
         line += f"\n\n📚 В очереди на повторение: {due_words} {words}. Жми /review."
     return line
+
+
+def format_lesson_plan(plan: LessonPlan, *, completed: int) -> str:
+    """План на следующий блок уроков (после каждых 12 завершённых)."""
+    lines = [
+        _bold(f"📚 План на следующие {PLAN_LESSON_COUNT} уроков"),
+        "",
+        f"✅ Уже пройдено уроков: {completed}",
+    ]
+    if plan.goal:
+        lines += ["", f"🎯 Цель: {escape(plan.goal)}"]
+    lines.append("")
+    for lesson in plan.lessons:
+        line = f"{lesson.number}. {escape(lesson.topic)}"
+        if lesson.focus:
+            line += f" — {escape(lesson.focus)}"
+        lines.append(line)
+        if lesson.reason:
+            lines.append(f"   <i>{escape(lesson.reason)}</i>")
+    return "\n".join(lines)
 
 
 def format_lesson_recap(content: LessonContent) -> str:

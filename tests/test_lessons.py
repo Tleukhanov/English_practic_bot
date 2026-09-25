@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from bot.lessons import LESSON_STEPS, next_lesson_position
@@ -5,6 +7,7 @@ from core.lessons import (
     LESSON_TYPES,
     LessonParseError,
     LessonService,
+    VocabWord,
     build_lesson_prompt,
     lesson_content_from_json,
     lesson_content_to_json,
@@ -117,6 +120,50 @@ def test_lesson_content_json_roundtrip():
     restored = lesson_content_from_json(lesson_content_to_json(content))
     assert restored == content
     assert restored.vocabulary[1].word == "flight"
+
+
+def test_lesson_content_from_json_invalid_returns_none():
+    for raw in ["", "not json", "42", "null", "[1, 2, 3]", '{"topic": "x"} junk', None]:
+        assert lesson_content_from_json(raw) is None
+
+
+def test_lesson_content_from_json_partial_fields_are_safe():
+    raw = json.dumps({
+        "topic": "Chess",
+        "intro": "Play!",
+        "vocabulary": [
+            {"word": "check", "translation": "шах", "example": "Check!"},
+            "junk-string",
+            42,
+            {"word": "mate", "translation": "мат"},
+        ],
+        "slides": "not-a-list",
+        "grammar": {"rule": "Past Simple", "examples": ["I went.", 5]},
+        "tasks": ["ok", {"bad": True}],
+        "lesson_type": None,
+    })
+    content = lesson_content_from_json(raw)
+    assert content is not None
+    assert content.topic == "Chess"
+    assert [w.word for w in content.vocabulary] == ["check", "mate"]
+    assert content.vocabulary[1].example == ""  # дефолт у неполного элемента
+    assert content.slides == []  # не-список -> пусто
+    assert content.tasks == ["ok"]  # битые элементы пропущены
+    assert content.grammar is not None
+    assert content.grammar.examples == ["I went."]
+    assert content.lesson_type == "standard"  # None -> дефолт
+
+
+def test_lesson_content_from_json_ignores_extra_keys_in_vocab():
+    raw = json.dumps({
+        "topic": "T",
+        "vocabulary": [
+            {"word": "w", "translation": "t", "example": "e", "extra": 1, "nested": {"a": 1}}
+        ],
+    })
+    content = lesson_content_from_json(raw)
+    assert content is not None
+    assert content.vocabulary == [VocabWord(word="w", translation="t", example="e")]
 
 
 class FakeLLM(LLMProvider):
@@ -307,3 +354,31 @@ async def test_lesson_service_generate_proposals():
     assert len(proposals) == 3
     assert proposals[0]["topic"] == "AI"
     assert llm.last_temperature == 0.8
+
+
+class RecordingLLM(LLMProvider):
+    def __init__(self):
+        self.messages_by_call = []
+
+    async def chat(self, messages, temperature=None, **kwargs):
+        self.messages_by_call.append(messages)
+        return '{"topic": "Chess", "intro": "Play the game!", "lesson_type": "standard"}'
+
+
+async def test_generate_passes_plan_hint_to_llm():
+    llm = RecordingLLM()
+    await LessonService(llm).generate("Chess", plan_hint="Practice small talk phrases")
+    assert len(llm.messages_by_call) == 3
+    for messages in llm.messages_by_call:
+        text = " ".join(m["content"] for m in messages)
+        assert "LESSON PLAN CONTEXT" in text
+        assert "Practice small talk phrases" in text
+
+
+async def test_generate_without_plan_hint_has_no_plan_block():
+    llm = RecordingLLM()
+    await LessonService(llm).generate("Chess")
+    assert len(llm.messages_by_call) == 3
+    for messages in llm.messages_by_call:
+        text = " ".join(m["content"] for m in messages)
+        assert "LESSON PLAN CONTEXT" not in text
