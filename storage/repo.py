@@ -56,6 +56,19 @@ class LessonSession:
 
 
 @dataclass
+class MiniLessonSession:
+    id: int
+    user_id: int
+    topic: str
+    content_json: str
+    preset: str | None
+    score_json: str | None
+    status: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass
 class DiagnosticSession:
     id: int
     user_id: int
@@ -455,6 +468,28 @@ class Repository(ABC):
 
     @abstractmethod
     async def abort_active_lessons(self, user_id: int) -> None: ...
+
+    @abstractmethod
+    async def start_mini_lesson(self, user_id: int, topic: str, deck_json: str, preset: str) -> MiniLessonSession: ...
+
+    @abstractmethod
+    async def get_active_mini_lesson(self, user_id: int) -> MiniLessonSession | None: ...
+
+    @abstractmethod
+    async def save_mini_answers(self, session_id: int, score_json: str) -> None: ...
+
+    @abstractmethod
+    async def finish_mini_lesson(self, session_id: int, score_json: str | None = None) -> None: ...
+
+    @abstractmethod
+    async def save_audio_answer(
+        self,
+        session_id: int,
+        word: str,
+        audio_file: str,
+        transcript: str,
+        rating: int | None,
+    ) -> None: ...
 
     @abstractmethod
     async def add_lesson_note(self, note: LessonNote) -> int: ...

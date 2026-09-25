@@ -26,6 +26,7 @@ from .repo import (
     LessonNote,
     LessonPlanRow,
     LessonSession,
+    MiniLessonSession,
     Payment,
     Repository,
     SRSWord,
@@ -69,6 +70,9 @@ CREATE TABLE IF NOT EXISTS lesson_sessions (
     topic TEXT NOT NULL,
     step INTEGER NOT NULL DEFAULT 0,
     task_index INTEGER NOT NULL DEFAULT 0,
+    mode TEXT NOT NULL DEFAULT 'chat',
+    score_json TEXT,
+    deck_preset TEXT,
     content_json TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
     created_at TEXT NOT NULL,
@@ -76,6 +80,15 @@ CREATE TABLE IF NOT EXISTS lesson_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_lesson_user ON lesson_sessions(user_id, status);
+
+CREATE TABLE IF NOT EXISTS audio_answers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES lesson_sessions(id),
+    word TEXT,
+    audio_file TEXT,
+    transcript TEXT,
+    rating INTEGER
+);
 
 CREATE TABLE IF NOT EXISTS diagnostic_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -244,6 +257,28 @@ class SQLiteRepository(Repository):
         columns = {row["name"] for row in await cursor.fetchall()}
         if "lesson_id" not in columns:
             await self._conn.execute("ALTER TABLE messages ADD COLUMN lesson_id INTEGER")
+
+        cursor = await self._conn.execute("PRAGMA table_info(lesson_sessions)")
+        columns = {row["name"] for row in await cursor.fetchall()}
+        if "mode" not in columns:
+            await self._conn.execute(
+                "ALTER TABLE lesson_sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'chat'"
+            )
+        if "score_json" not in columns:
+            await self._conn.execute("ALTER TABLE lesson_sessions ADD COLUMN score_json TEXT")
+        if "deck_preset" not in columns:
+            await self._conn.execute("ALTER TABLE lesson_sessions ADD COLUMN deck_preset TEXT")
+
+        await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS audio_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL REFERENCES lesson_sessions(id),
+                word TEXT,
+                audio_file TEXT,
+                transcript TEXT,
+                rating INTEGER
+            )
+        """)
 
         cursor = await self._conn.execute("PRAGMA table_info(user_profiles)")
         columns = {row["name"] for row in await cursor.fetchall()}
@@ -1012,6 +1047,97 @@ class SQLiteRepository(Repository):
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
+
+    @staticmethod
+    def _row_to_mini_lesson(row) -> MiniLessonSession:
+        return MiniLessonSession(
+            id=row["id"],
+            user_id=row["user_id"],
+            topic=row["topic"],
+            content_json=row["content_json"],
+            preset=row["deck_preset"],
+            score_json=row["score_json"],
+            status=row["status"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    async def start_mini_lesson(
+        self, user_id: int, topic: str, deck_json: str, preset: str
+    ) -> MiniLessonSession:
+        conn = self._require_conn()
+        now = _now()
+        try:
+            await conn.execute(
+                "UPDATE lesson_sessions SET status = 'aborted', updated_at = ? "
+                "WHERE user_id = ? AND mode = 'miniapp' AND status = 'active'",
+                (now, user_id),
+            )
+            cursor = await conn.execute(
+                "INSERT INTO lesson_sessions "
+                "(user_id, topic, content_json, mode, deck_preset, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, 'miniapp', ?, 'active', ?, ?)",
+                (user_id, topic, deck_json, preset, now, now),
+            )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
+        return MiniLessonSession(
+            id=cursor.lastrowid,
+            user_id=user_id,
+            topic=topic,
+            content_json=deck_json,
+            preset=preset,
+            score_json=None,
+            status="active",
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def get_active_mini_lesson(self, user_id: int) -> MiniLessonSession | None:
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT id, user_id, topic, content_json, deck_preset, score_json, status, created_at, updated_at "
+            "FROM lesson_sessions WHERE user_id = ? AND mode = 'miniapp' AND status = 'active' "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return self._row_to_mini_lesson(row) if row else None
+
+    async def save_mini_answers(self, session_id: int, score_json: str) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE lesson_sessions SET score_json = ?, updated_at = ? WHERE id = ? AND mode = 'miniapp'",
+            (score_json, _now(), session_id),
+        )
+        await conn.commit()
+
+    async def finish_mini_lesson(self, session_id: int, score_json: str | None = None) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "UPDATE lesson_sessions SET status = 'finished', updated_at = ?, "
+            "score_json = COALESCE(?, score_json) WHERE id = ? AND mode = 'miniapp'",
+            (_now(), score_json, session_id),
+        )
+        await conn.commit()
+
+    async def save_audio_answer(
+        self,
+        session_id: int,
+        word: str,
+        audio_file: str,
+        transcript: str,
+        rating: int | None,
+    ) -> None:
+        conn = self._require_conn()
+        await conn.execute(
+            "INSERT INTO audio_answers (session_id, word, audio_file, transcript, rating) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (session_id, word, audio_file, transcript, rating),
+        )
+        await conn.commit()
 
     async def start_lesson(self, user_id: int, topic: str, content_json: str) -> LessonSession:
         conn = self._require_conn()
