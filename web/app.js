@@ -534,6 +534,7 @@
       state.selectedTopic = topics[0] || defaultTopics[0];
     }
     const profile = state.profile;
+    const quotaLeft = numberOrNull(profile.quota_left);
     const interestMarkup = (profile.interests || []).slice(0, 4).map(interest => `<span class='meta-pill'>${escapeHtml(interest)}</span>`).join('');
     const topicMarkup = topics.map((topic, index) => {
       const selected = topic === state.selectedTopic;
@@ -554,6 +555,7 @@
           <div class='profile-stat'><span class='profile-stat-label'>Квота</span><strong class='profile-stat-value'>${displayValue(profile.quota_left, '∞')}</strong></div>
           <div class='profile-stat'><span class='profile-stat-label'>Партнёр</span><strong class='profile-stat-value'>${escapeHtml(profile.character || 'Samantha')}</strong></div>
         </div>
+        ${quotaLeft !== null && quotaLeft <= 0 ? `<div class='upsell-banner'><span class='banner-icon'>💎</span><span class='upsell-copy'><strong>Квота на сегодня закончилась</strong><small>Отправь боту /premium — оформим подписку за минуту.</small></span><button class='upsell-button' type='button' data-action='premium-upsell'>💳 Подписка</button></div>` : ''}
         <div class='section-heading'><h2>О чём поговорим?</h2><span>3 темы на выбор</span></div>
         <div class='topic-list'>${topicMarkup}</div>
         <button class='random-button' type='button' data-action='random-topic'>🎲 Случайная тема</button>
@@ -1342,6 +1344,8 @@
       showComingSoon();
     } else if (action === 'back-menu') {
       goBackToMenu();
+    } else if (action === 'premium-upsell') {
+      showToast('Открой бота и отправь /premium 💎', true);
     } else if (action === 'use-demo') {
       state.demo = true;
       state.profile = { ...defaultProfile };

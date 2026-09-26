@@ -618,6 +618,52 @@ h3 {
   font-size: 16px;
 }
 
+.upsell-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 12px 13px;
+  border: 1px solid color-mix(in srgb, var(--tg-button-color) 30%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--tg-hint-color);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.upsell-banner .banner-icon {
+  font-size: 18px;
+}
+
+.upsell-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+}
+
+.upsell-copy strong {
+  color: var(--tg-text-color);
+  font-size: 13px;
+}
+
+.upsell-button {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--tg-button-color);
+  color: var(--tg-button-text-color);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.upsell-button:active {
+  transform: scale(0.96);
+}
+
 .loading-screen {
   align-items: center;
   justify-content: center;

@@ -12,6 +12,15 @@ import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 from bot.config import Settings
+from bot.keyboards import (
+    MINI_APP_BUTTON_TEXT,
+    get_webapp_url,
+    main_menu,
+    miniapp_button,
+    miniapp_lesson_keyboard,
+    set_webapp_url,
+)
+from bot.main import _start_webapp
 from bot.mini_api import _phrase_rating, _quiz_results
 from bot.webapp import (
     compute_hash,
@@ -684,3 +693,61 @@ async def test_all_post_endpoints_require_init_data(path):
         assert (await response.json()) == {"ok": False, "error": "unauthorized"}
     finally:
         await client.close()
+
+
+# ---------- кнопка Mini App в боте и старт сервера ----------
+
+
+def _rows_contain_webapp(markup) -> bool:
+    return any(
+        bool(getattr(button, "web_app", None))
+        for row in markup.inline_keyboard
+        for button in row
+    )
+
+
+def test_miniapp_button_hidden_when_url_empty():
+    set_webapp_url("")
+    try:
+        assert miniapp_button() is None
+        assert miniapp_lesson_keyboard() is None
+        assert not _rows_contain_webapp(main_menu())
+    finally:
+        set_webapp_url("")
+
+
+def test_miniapp_button_visible_with_url():
+    set_webapp_url("https://app.example.com")
+    try:
+        button = miniapp_button()
+        assert button is not None
+        assert button.text == MINI_APP_BUTTON_TEXT
+        assert button.web_app is not None
+        assert button.web_app.url == "https://app.example.com"
+        lesson = miniapp_lesson_keyboard()
+        assert lesson is not None
+        assert len(lesson.inline_keyboard) == 2
+        assert _rows_contain_webapp(miniapp_lesson_keyboard())
+        assert _rows_contain_webapp(main_menu())
+    finally:
+        set_webapp_url("")
+
+
+async def test_start_webapp_returns_none_without_url():
+    runner = await _start_webapp(Settings(telegram_bot_token=BOT_TOKEN), None, {})
+    assert runner is None
+
+
+async def test_start_webapp_binds_server_and_sets_url():
+    settings = Settings(
+        telegram_bot_token=BOT_TOKEN,
+        webapp_url="https://app.example.com",
+        webapp_port=0,
+    )
+    runner = await _start_webapp(settings, None, {})
+    assert runner is not None
+    try:
+        assert get_webapp_url() == "https://app.example.com"
+    finally:
+        await runner.cleanup()
+        set_webapp_url("")
